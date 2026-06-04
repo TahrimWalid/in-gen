@@ -1,13 +1,13 @@
 'use client';
 
-// 👇 1. Import useEffect and ControlButton
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import ReactFlow, { MiniMap, Controls, Background, BackgroundVariant, ControlButton } from 'reactflow';
 import { useStore } from '../app/store';
 import AwsNode from './AwsNode';
 import AwsEdge from './AwsEdge';
 import IssuesPanel from './IssuesPanel';
-import { Undo2, Redo2 } from 'lucide-react'; // 👈 2. Import icons
+import PropertiesPanel from './PropertiesPanel';
+import { Undo2, Redo2 } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 let id = 3;
@@ -17,19 +17,19 @@ export default function Canvas() {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   
-  // 👇 3. Pull our history functions from the store
+  // Pull our history functions and selection handler from the store
   const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, 
-    addNode, takeSnapshot, undo, redo, past, future 
+    addNode, takeSnapshot, undo, redo, past, future,
+    setSelectedElement 
   } = useStore();
 
   const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
   const edgeTypes = useMemo(() => ({ awsEdge: AwsEdge }), []);
 
-  // 👇 4. Keyboard Shortcuts Hook
+  // Keyboard Shortcuts Hook (Undo/Redo)
   useEffect(() => {
     const handleKeyDown = (event) => {
-      // Check for Ctrl/Cmd + Z (Undo) or Ctrl/Cmd + Y / Shift+Z (Redo)
       if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
         if (event.shiftKey) {
           redo();
@@ -45,10 +45,21 @@ export default function Canvas() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
 
-  // 👇 5. Snapshot before a node starts moving
+  // Snapshot before a node starts moving
   const onNodeDragStart = useCallback(() => {
     takeSnapshot();
   }, [takeSnapshot]);
+
+  // 👇 Fixed Selection Handler using elementType to avoid ReactFlow type conflicts
+  const onSelectionChange = useCallback(({ nodes, edges }) => {
+    if (nodes.length > 0) {
+      setSelectedElement({ ...nodes[0], elementType: 'node' });
+    } else if (edges.length > 0) {
+      setSelectedElement({ ...edges[0], elementType: 'edge' });
+    } else {
+      setSelectedElement(null); 
+    }
+  }, [setSelectedElement]);
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -88,6 +99,7 @@ export default function Canvas() {
 
   return (
     <div className="w-full h-full flex-1 relative" ref={reactFlowWrapper}>
+      
       <div className="absolute top-4 right-4 z-10">
         <button 
           onClick={logState}
@@ -98,6 +110,7 @@ export default function Canvas() {
       </div>
 
       <IssuesPanel />
+      <PropertiesPanel />
 
       <ReactFlow
         nodes={nodes}
@@ -110,11 +123,11 @@ export default function Canvas() {
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onDragOver={onDragOver}
-        onNodeDragStart={onNodeDragStart} // 👈 Added drag listener
+        onNodeDragStart={onNodeDragStart} 
+        onSelectionChange={onSelectionChange} // 👈 Attach selection listener
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
-        {/* 👇 6. Custom UI Buttons for Undo/Redo */}
         <Controls>
           <ControlButton onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
             <Undo2 className="w-4 h-4 text-slate-700" />

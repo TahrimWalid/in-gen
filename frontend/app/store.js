@@ -11,10 +11,36 @@ export const useStore = create((set, get) => ({
     { id: 'e1-2', source: '1', target: '2', type: 'awsEdge', animated: true, data: { invocationType: 'Sync', authType: 'NONE' } }
   ],
   issues: [], 
-  
-  // 👇 History Stack
   past: [],
   future: [],
+
+  // 👇 NEW: State to track what the user clicked on
+  selectedElement: null,
+  setSelectedElement: (element) => set({ selectedElement: element }),
+
+  // 👇 NEW: Functions to update specific node/edge data
+  updateNodeData: (nodeId, newData) => {
+    get().takeSnapshot();
+    set({
+      nodes: get().nodes.map((node) => 
+        node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
+      )
+    });
+    get().runValidation();
+    // Update selected element so the UI stays in sync
+    set({ selectedElement: { ...get().nodes.find(n => n.id === nodeId), elementType: 'node' } });
+  },
+
+  updateEdgeData: (edgeId, newData) => {
+    get().takeSnapshot();
+    set({
+      edges: get().edges.map((edge) => 
+        edge.id === edgeId ? { ...edge, data: { ...edge.data, ...newData } } : edge
+      )
+    });
+    get().runValidation();
+    set({ selectedElement: { ...get().edges.find(e => e.id === edgeId), elementType: 'edge' } });
+  },
 
   runValidation: () => {
     const { nodes, edges } = get();
@@ -22,24 +48,17 @@ export const useStore = create((set, get) => ({
     set({ issues: newIssues });
   },
 
-  // 👇 Save the current state before we change it
   takeSnapshot: () => {
     const { nodes, edges, past } = get();
-    set({
-      past: [...past, { nodes, edges }],
-      future: [], // Clear redo stack whenever a new action happens
-    });
+    set({ past: [...past, { nodes, edges }], future: [] });
   },
 
   undo: () => {
     const { past, future, nodes, edges } = get();
     if (past.length === 0) return;
-    
     const previousState = past[past.length - 1];
-    const newPast = past.slice(0, past.length - 1);
-    
     set({
-      past: newPast,
+      past: past.slice(0, past.length - 1),
       future: [{ nodes, edges }, ...future],
       nodes: previousState.nodes,
       edges: previousState.edges,
@@ -50,23 +69,17 @@ export const useStore = create((set, get) => ({
   redo: () => {
     const { past, future, nodes, edges } = get();
     if (future.length === 0) return;
-    
     const nextState = future[0];
-    const newFuture = future.slice(1);
-    
     set({
       past: [...past, { nodes, edges }],
-      future: newFuture,
+      future: future.slice(1),
       nodes: nextState.nodes,
       edges: nextState.edges,
     });
     get().runValidation();
   },
 
-  // --- Adjusted Event Handlers ---
-
   onNodesChange: (changes) => {
-    // Only snapshot if the change is a deletion (dragging is handled separately)
     if (changes.some(c => c.type === 'remove')) get().takeSnapshot();
     set({ nodes: applyNodeChanges(changes, get().nodes) });
     get().runValidation();
@@ -79,11 +92,9 @@ export const useStore = create((set, get) => ({
   },
   
   onConnect: (connection) => {
-    get().takeSnapshot(); // Snapshot before connecting
+    get().takeSnapshot();
     const semanticConnection = {
-      ...connection,
-      type: 'awsEdge',
-      animated: true,
+      ...connection, type: 'awsEdge', animated: true,
       data: { authType: 'NONE', invocationType: 'Sync', iamPermissions: [] }
     };
     set({ edges: addEdge(semanticConnection, get().edges) });
@@ -91,7 +102,7 @@ export const useStore = create((set, get) => ({
   },
   
   addNode: (node) => {
-    get().takeSnapshot(); // Snapshot before adding
+    get().takeSnapshot();
     set({ nodes: [...get().nodes, node] });
     get().runValidation();
   },

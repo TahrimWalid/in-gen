@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react'; // 👈 Added useState import
+import React, { useEffect } from 'react';
 import { useStore } from '../app/store';
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export default function IssuesPanel() {
-  // 👈 Pulled runValidation from the store so the useEffect doesn't crash
   const { issues, nodes, runValidation } = useStore();
-  const [isExpanded, setIsExpanded] = useState(true);
 
   // Run validation once on initial load so we check the default hardcoded nodes
   useEffect(() => {

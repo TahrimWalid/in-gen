@@ -7,17 +7,19 @@ import AwsNode from './AwsNode';
 import AwsEdge from './AwsEdge';
 import IssuesPanel from './IssuesPanel';
 import PropertiesPanel from './PropertiesPanel';
+import NodePropertiesPanel from './NodePropertiesPanel';
+import ChatSidebar from './ChatSidebar';
 import ExportModal from './ExportModal';
-import { Undo2, Redo2, Code2, Trash2 } from 'lucide-react'; // 👈 Imported Trash2
+import { Undo2, Redo2, Code2, Trash2, Sparkles } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
-let id = 3;
-const getId = () => `dndnode_${id++}`;
+const getId = () => crypto.randomUUID();
 
 export default function Canvas() {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   
   const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, 
@@ -94,7 +96,7 @@ export default function Canvas() {
       {/* Top Right Action Buttons */}
       <div className="absolute top-4 right-4 z-10 flex gap-2">
         {/* 👇 The new Clear Canvas Button */}
-        <button 
+        <button
           onClick={clearCanvas}
           className="bg-white border border-slate-200 text-red-600 px-3 py-2 rounded-md shadow-sm hover:bg-red-50 text-sm font-bold transition-all flex items-center gap-2"
           title="Clear entire canvas"
@@ -102,8 +104,20 @@ export default function Canvas() {
           <Trash2 className="w-4 h-4" />
           Clear
         </button>
-        
-        <button 
+
+        <button
+          onClick={() => setIsChatOpen(o => !o)}
+          className={`border px-3 py-2 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
+            isChatOpen
+              ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
+              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          AI Architect
+        </button>
+
+        <button
           onClick={() => setIsExportOpen(true)}
           className="bg-purple-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
         >
@@ -114,6 +128,8 @@ export default function Canvas() {
 
       <IssuesPanel />
       <PropertiesPanel />
+      <NodePropertiesPanel />
+      <ChatSidebar isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
 
       <ReactFlow

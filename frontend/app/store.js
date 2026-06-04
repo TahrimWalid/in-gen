@@ -57,7 +57,7 @@ export const useStore = create(
 
       takeSnapshot: () => {
         const { nodes, edges, past } = get();
-        set({ past: [...past, { nodes, edges }], future: [] });
+        set({ past: [...past.slice(-49), { nodes, edges }], future: [] });
       },
 
       undo: () => {
@@ -89,7 +89,9 @@ export const useStore = create(
       onNodesChange: (changes) => {
         if (changes.some(c => c.type === 'remove')) get().takeSnapshot();
         set({ nodes: applyNodeChanges(changes, get().nodes) });
-        get().runValidation();
+        if (changes.some(c => c.type !== 'position' && c.type !== 'dimensions')) {
+          get().runValidation();
+        }
       },
       
       onEdgesChange: (changes) => {
@@ -110,17 +112,27 @@ export const useStore = create(
       
       addNode: (node) => {
         get().takeSnapshot();
-        set({ nodes: [...get().nodes, node] });
+        const serviceDefaults = {
+          lambda:      { timeout: 3, memorySize: 128, hasDeadLetterQueue: false },
+          sqs:         { visibilityTimeout: 30, isFifo: false },
+          s3:          { blockPublicAccess: true, versioning: false, encryption: false },
+          apiGateway:  { throttlingEnabled: false, loggingEnabled: false },
+          dynamodb:    { pointInTimeRecovery: false, billingMode: 'PAY_PER_REQUEST' },
+        };
+        const enriched = {
+          ...node,
+          data: { ...(serviceDefaults[node.data.service] || {}), ...node.data },
+        };
+        set({ nodes: [...get().nodes, enriched] });
         get().runValidation();
       },
     }),
     {
       name: 'ingen-canvas-storage', // 👈 4. The name of the key in localStorage
       // We only want to save the actual architecture, not the undo history or selection state
-      partialize: (state) => ({ 
-        nodes: state.nodes, 
-        edges: state.edges, 
-        issues: state.issues 
+      partialize: (state) => ({
+        nodes: state.nodes,
+        edges: state.edges,
       }),
     }
   )

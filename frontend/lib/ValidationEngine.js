@@ -1,29 +1,22 @@
-// frontend/lib/ValidationEngine.js
 import { rules } from './rules';
 
 export const validateArchitecture = (nodes, edges) => {
   const issues = [];
 
-  // Loop through every node on the canvas
   nodes.forEach(node => {
-    
-    // Test the node against every rule in our registry
     rules.forEach(rule => {
-      const failedNodeId = rule.evaluate(node, nodes, edges);
-      
-      // If the rule returns an ID, it means the rule failed. Catch the issue!
-      if (failedNodeId) {
-        issues.push({
-          nodeId: failedNodeId,
-          ruleId: rule.id,
-          name: rule.name,
-          severity: rule.severity,
-          message: rule.message,
-        });
-      }
+      const result = rule.evaluate(node, nodes, edges);
+      if (!result) return;
+
+      const results = Array.isArray(result) ? result : [result];
+      results.forEach(r => {
+        if (!r) return;
+        const nodeId = typeof r === 'string' ? r : r.nodeId;
+        const message = (typeof r === 'object' && r.message) ? r.message : rule.message;
+        issues.push({ nodeId, ruleId: rule.id, name: rule.name, severity: rule.severity, message });
+      });
     });
-    
   });
 
-  return issues; // Returns an array of current architectural mistakes
+  return issues;
 };

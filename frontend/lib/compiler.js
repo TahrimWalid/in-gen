@@ -24,6 +24,7 @@ export const compileToTerraform = (nodes, edges) => {
         tfCode += `  function_name = "${node.data.label}"\n`;
         tfCode += `  runtime       = "nodejs18.x"\n`;
         tfCode += `  handler       = "index.handler"\n`;
+        tfCode += `  filename      = "placeholder.zip"\n`;
         tfCode += `  role          = aws_iam_role.${safeName}_role.arn\n`;
         tfCode += `}\n\n`;
         break;
@@ -53,6 +54,21 @@ export const compileToTerraform = (nodes, edges) => {
         tfCode += `  name = "${node.data.label}"\n`;
         tfCode += `}\n\n`;
         break;
+      case 'sns':
+        tfCode += `resource "aws_sns_topic" "${safeName}" {\n`;
+        tfCode += `  name = "${node.data.label}"\n`;
+        tfCode += `}\n\n`;
+        break;
+      case 'eventbridge':
+        tfCode += `resource "aws_cloudwatch_event_bus" "${safeName}" {\n`;
+        tfCode += `  name = "${node.data.label}"\n`;
+        tfCode += `}\n\n`;
+        break;
+      case 'cognito':
+        tfCode += `resource "aws_cognito_user_pool" "${safeName}" {\n`;
+        tfCode += `  name = "${node.data.label}"\n`;
+        tfCode += `}\n\n`;
+        break;
     }
   });
 
@@ -72,53 +88,69 @@ export const compileToTerraform = (nodes, edges) => {
       tfCode += `  })\n`;
       tfCode += `}\n\n`;
 
-      // Find everything this Lambda connects TO (Target)
       const outgoingEdges = edges.filter(e => e.source === node.id);
-      
-      if (outgoingEdges.length > 0) {
+      const statements = [];
+
+      outgoingEdges.forEach((edge) => {
+        const targetNode = nodes.find(n => n.id === edge.target);
+        if (!targetNode) return;
+
+        const targetSafeName = getSafeName(targetNode.data.label);
+
+        if (targetNode.data.service === 's3') {
+          statements.push(
+            `      {\n        Action   = ["s3:GetObject", "s3:PutObject"]\n        Effect   = "Allow"\n        Resource = "\${aws_s3_bucket.${targetSafeName}.arn}/*"\n      }`
+          );
+        } else if (targetNode.data.service === 'dynamodb') {
+          statements.push(
+            `      {\n        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:Scan"]\n        Effect   = "Allow"\n        Resource = aws_dynamodb_table.${targetSafeName}.arn\n      }`
+          );
+        } else if (targetNode.data.service === 'sqs') {
+          statements.push(
+            `      {\n        Action   = ["sqs:SendMessage"]\n        Effect   = "Allow"\n        Resource = aws_sqs_queue.${targetSafeName}.arn\n      }`
+          );
+        }
+      });
+
+      if (statements.length > 0) {
         tfCode += `resource "aws_iam_role_policy" "${safeName}_policy" {\n`;
         tfCode += `  name = "${safeName}_policy"\n`;
         tfCode += `  role = aws_iam_role.${safeName}_role.id\n`;
         tfCode += `  policy = jsonencode({\n`;
         tfCode += `    Version = "2012-10-17"\n`;
         tfCode += `    Statement = [\n`;
-
-        outgoingEdges.forEach((edge, index) => {
-          const targetNode = nodes.find(n => n.id === edge.target);
-          if (!targetNode) return;
-
-          const targetSafeName = getSafeName(targetNode.data.label);
-
-          // Infer permissions based on what the Lambda is connecting to
-          if (targetNode.data.service === 's3') {
-            tfCode += `      {\n`;
-            tfCode += `        Action   = ["s3:GetObject", "s3:PutObject"]\n`;
-            tfCode += `        Effect   = "Allow"\n`;
-            tfCode += `        Resource = "\${aws_s3_bucket.${targetSafeName}.arn}/*"\n`;
-            tfCode += `      }${index < outgoingEdges.length - 1 ? ',' : ''}\n`;
-          } 
-          else if (targetNode.data.service === 'dynamodb') {
-            tfCode += `      {\n`;
-            tfCode += `        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:Scan"]\n`;
-            tfCode += `        Effect   = "Allow"\n`;
-            tfCode += `        Resource = aws_dynamodb_table.${targetSafeName}.arn\n`;
-            tfCode += `      }${index < outgoingEdges.length - 1 ? ',' : ''}\n`;
-          }
-          else if (targetNode.data.service === 'sqs') {
-            tfCode += `      {\n`;
-            tfCode += `        Action   = ["sqs:SendMessage"]\n`;
-            tfCode += `        Effect   = "Allow"\n`;
-            tfCode += `        Resource = aws_sqs_queue.${targetSafeName}.arn\n`;
-            tfCode += `      }${index < outgoingEdges.length - 1 ? ',' : ''}\n`;
-          }
-        });
-
-        tfCode += `    ]\n`;
+        tfCode += statements.join(',\n');
+        tfCode += `\n    ]\n`;
         tfCode += `  })\n`;
         tfCode += `}\n\n`;
       }
     }
   });
+
+  // 3. GENERATE LAMBDA PERMISSIONS (API Gateway → Lambda)
+  const apigwToLambdaEdges = edges.filter((edge) => {
+    const source = nodes.find(n => n.id === edge.source);
+    const target = nodes.find(n => n.id === edge.target);
+    return source?.data.service === 'apiGateway' && target?.data.service === 'lambda';
+  });
+
+  if (apigwToLambdaEdges.length > 0) {
+    tfCode += `# --- LAMBDA PERMISSIONS ---\n\n`;
+    apigwToLambdaEdges.forEach((edge) => {
+      const apigwNode = nodes.find(n => n.id === edge.source);
+      const lambdaNode = nodes.find(n => n.id === edge.target);
+      const apigwSafeName = getSafeName(apigwNode.data.label);
+      const lambdaSafeName = getSafeName(lambdaNode.data.label);
+
+      tfCode += `resource "aws_lambda_permission" "${lambdaSafeName}_apigw" {\n`;
+      tfCode += `  statement_id  = "AllowAPIGatewayInvoke"\n`;
+      tfCode += `  action        = "lambda:InvokeFunction"\n`;
+      tfCode += `  function_name = aws_lambda_function.${lambdaSafeName}.function_name\n`;
+      tfCode += `  principal     = "apigateway.amazonaws.com"\n`;
+      tfCode += `  source_arn    = "\${aws_api_gateway_rest_api.${apigwSafeName}.execution_arn}/*/*"\n`;
+      tfCode += `}\n\n`;
+    });
+  }
 
   return tfCode;
 };

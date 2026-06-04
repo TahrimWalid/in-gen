@@ -79,12 +79,103 @@ export const rules = [
     message: 'Messages are entering this SQS queue but nothing is polling it. Add a Lambda worker to consume messages.',
     evaluate: (node, nodes, edges) => {
       if (node.data.service !== 'sqs') return null;
-      // Is there an edge going INTO the queue?
       const isReceiving = edges.some(edge => edge.target === node.id);
-      // Is there an edge going OUT of the queue?
       const isConsumed = edges.some(edge => edge.source === node.id);
-      
       return (isReceiving && !isConsumed) ? node.id : null;
     }
-  }
+  },
+
+  // 7. SQS visibility timeout vs Lambda timeout
+  {
+    id: 'sqs-visibility-timeout',
+    name: 'SQS Visibility Timeout Too Low',
+    severity: 'error',
+    message: 'SQS visibility timeout must be at least 6× the consuming Lambda timeout to prevent duplicate processing.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 'sqs') return null;
+      const outgoing = edges.filter(e => e.source === node.id);
+      for (const edge of outgoing) {
+        const target = nodes.find(n => n.id === edge.target);
+        if (!target || target.data.service !== 'lambda') continue;
+        const sqsTimeout = node.data.visibilityTimeout ?? 30;
+        const lambdaTimeout = target.data.timeout ?? 3;
+        if (sqsTimeout < lambdaTimeout * 6) {
+          const recommended = lambdaTimeout * 6;
+          return {
+            nodeId: node.id,
+            message: `SQS visibility timeout (${sqsTimeout}s) is less than 6× the Lambda timeout (${lambdaTimeout}s). This causes duplicate message processing. Set visibility timeout to at least ${recommended}s.`,
+          };
+        }
+      }
+      return null;
+    }
+  },
+
+  // 8. S3 public access exposed
+  {
+    id: 's3-public-access',
+    name: 'S3 Bucket Has Public Access',
+    severity: 'error',
+    message: 'S3 bucket has public access enabled. This exposes your data to the internet. Enable Block Public Access unless this bucket intentionally serves public static assets.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 's3') return null;
+      return node.data.blockPublicAccess === false ? node.id : null;
+    }
+  },
+
+  // 9. Lambda using AWS default timeout
+  {
+    id: 'lambda-default-timeout',
+    name: 'Lambda Using AWS Default Timeout',
+    severity: 'warning',
+    message: 'Lambda is using the AWS default timeout of 3 seconds. This is rarely correct for production. Set an explicit timeout based on your expected execution duration.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 'lambda') return null;
+      return (node.data.timeout === 3 || node.data.timeout === undefined) ? node.id : null;
+    }
+  },
+
+  // 10. DynamoDB missing point-in-time recovery
+  {
+    id: 'dynamodb-no-pitr',
+    name: 'DynamoDB Missing Point-in-Time Recovery',
+    severity: 'warning',
+    message: 'DynamoDB table has no Point-in-Time Recovery enabled. Accidental deletes or overwrites cannot be recovered. Enable PITR for production tables.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 'dynamodb') return null;
+      return node.data.pointInTimeRecovery === false ? node.id : null;
+    }
+  },
+
+  // 11. API Gateway missing throttling
+  {
+    id: 'apigw-no-throttling',
+    name: 'API Gateway Missing Throttling',
+    severity: 'warning',
+    message: 'API Gateway has no throttling configured. Without rate limits, a traffic spike or abuse can overwhelm your Lambda functions and inflate your bill.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 'apiGateway') return null;
+      if (node.data.throttlingEnabled !== false) return null;
+      return edges.some(e => e.source === node.id) ? node.id : null;
+    }
+  },
+
+  // 12. Lambda missing DLQ on async invocation path
+  {
+    id: 'lambda-no-dlq',
+    name: 'Lambda Missing Dead Letter Queue',
+    severity: 'warning',
+    message: 'This Lambda is invoked asynchronously but has no Dead Letter Queue. Failed invocations will be silently dropped after AWS retries. Add a DLQ to capture failures.',
+    evaluate: (node, nodes, edges) => {
+      if (node.data.service !== 'lambda') return null;
+      if (node.data.hasDeadLetterQueue !== false) return null;
+      const asyncSources = ['eventbridge', 'sns'];
+      const hasAsyncTrigger = edges.some(edge => {
+        if (edge.target !== node.id) return false;
+        const source = nodes.find(n => n.id === edge.source);
+        return source && asyncSources.includes(source.data.service);
+      });
+      return hasAsyncTrigger ? node.id : null;
+    }
+  },
 ];

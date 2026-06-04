@@ -1,16 +1,21 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react'; // 👈 Added useState import
 import { useStore } from '../app/store';
-import { AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function IssuesPanel() {
-  const { issues, runValidation } = useStore();
+  // 👈 Pulled runValidation from the store so the useEffect doesn't crash
+  const { issues, nodes, runValidation } = useStore();
+  const [isExpanded, setIsExpanded] = useState(true);
 
   // Run validation once on initial load so we check the default hardcoded nodes
   useEffect(() => {
     runValidation();
   }, [runValidation]);
+
+  // 👇 THE FIX: If there are no nodes on the canvas, don't render the panel at all!
+  if (nodes.length === 0) return null;
 
   return (
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl bg-white border border-slate-200 rounded-lg shadow-2xl overflow-hidden z-10 flex flex-col max-h-64">

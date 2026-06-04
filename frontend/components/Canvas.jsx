@@ -8,7 +8,7 @@ import AwsEdge from './AwsEdge';
 import IssuesPanel from './IssuesPanel';
 import PropertiesPanel from './PropertiesPanel';
 import ExportModal from './ExportModal';
-import { Undo2, Redo2, Code2 } from 'lucide-react';
+import { Undo2, Redo2, Code2, Trash2 } from 'lucide-react'; // 👈 Imported Trash2
 import 'reactflow/dist/style.css';
 
 let id = 3;
@@ -17,21 +17,17 @@ const getId = () => `dndnode_${id++}`;
 export default function Canvas() {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
-  
-  // 👇 State to control our new compiler modal
   const [isExportOpen, setIsExportOpen] = useState(false);
   
-  // Pull our history functions and selection handler from the store
   const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, 
     addNode, takeSnapshot, undo, redo, past, future,
-    setSelectedElement 
+    setSelectedElement, clearCanvas // 👈 Grabbed clearCanvas
   } = useStore();
 
   const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
   const edgeTypes = useMemo(() => ({ awsEdge: AwsEdge }), []);
 
-  // Keyboard Shortcuts Hook (Undo/Redo)
   useEffect(() => {
     const handleKeyDown = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
@@ -49,12 +45,10 @@ export default function Canvas() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
 
-  // Snapshot before a node starts moving
   const onNodeDragStart = useCallback(() => {
     takeSnapshot();
   }, [takeSnapshot]);
 
-  // Handle Selection of Nodes/Edges to show in the Properties Panel
   const onSelectionChange = useCallback(({ nodes, edges }) => {
     if (nodes.length > 0) {
       setSelectedElement({ ...nodes[0], elementType: 'node' });
@@ -97,8 +91,18 @@ export default function Canvas() {
   return (
     <div className="w-full h-full flex-1 relative" ref={reactFlowWrapper}>
       
-      {/* 👇 The new Export Button replaces the old JSON logger */}
+      {/* Top Right Action Buttons */}
       <div className="absolute top-4 right-4 z-10 flex gap-2">
+        {/* 👇 The new Clear Canvas Button */}
+        <button 
+          onClick={clearCanvas}
+          className="bg-white border border-slate-200 text-red-600 px-3 py-2 rounded-md shadow-sm hover:bg-red-50 text-sm font-bold transition-all flex items-center gap-2"
+          title="Clear entire canvas"
+        >
+          <Trash2 className="w-4 h-4" />
+          Clear
+        </button>
+        
         <button 
           onClick={() => setIsExportOpen(true)}
           className="bg-purple-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
@@ -110,8 +114,6 @@ export default function Canvas() {
 
       <IssuesPanel />
       <PropertiesPanel />
-      
-      {/* 👇 Mount the Export Modal */}
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
 
       <ReactFlow

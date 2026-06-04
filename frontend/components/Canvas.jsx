@@ -7,7 +7,8 @@ import AwsNode from './AwsNode';
 import AwsEdge from './AwsEdge';
 import IssuesPanel from './IssuesPanel';
 import PropertiesPanel from './PropertiesPanel';
-import { Undo2, Redo2 } from 'lucide-react';
+import ExportModal from './ExportModal';
+import { Undo2, Redo2, Code2 } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 let id = 3;
@@ -16,6 +17,9 @@ const getId = () => `dndnode_${id++}`;
 export default function Canvas() {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  
+  // 👇 State to control our new compiler modal
+  const [isExportOpen, setIsExportOpen] = useState(false);
   
   // Pull our history functions and selection handler from the store
   const { 
@@ -50,7 +54,7 @@ export default function Canvas() {
     takeSnapshot();
   }, [takeSnapshot]);
 
-  // 👇 Fixed Selection Handler using elementType to avoid ReactFlow type conflicts
+  // Handle Selection of Nodes/Edges to show in the Properties Panel
   const onSelectionChange = useCallback(({ nodes, edges }) => {
     if (nodes.length > 0) {
       setSelectedElement({ ...nodes[0], elementType: 'node' });
@@ -90,27 +94,25 @@ export default function Canvas() {
     [reactFlowInstance, addNode]
   );
 
-  const logState = () => {
-    const currentState = { nodes, edges };
-    console.log("🔥 CURRENT ARCHITECTURE STATE 🔥");
-    console.log(JSON.stringify(currentState, null, 2));
-    alert("Check your browser console for the JSON state!");
-  };
-
   return (
     <div className="w-full h-full flex-1 relative" ref={reactFlowWrapper}>
       
-      <div className="absolute top-4 right-4 z-10">
+      {/* 👇 The new Export Button replaces the old JSON logger */}
+      <div className="absolute top-4 right-4 z-10 flex gap-2">
         <button 
-          onClick={logState}
-          className="bg-slate-800 text-white px-4 py-2 rounded-md shadow-md hover:bg-slate-700 text-sm font-semibold transition-colors"
+          onClick={() => setIsExportOpen(true)}
+          className="bg-purple-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
         >
-          {'{ }'} Log JSON State
+          <Code2 className="w-4 h-4" />
+          Export Terraform
         </button>
       </div>
 
       <IssuesPanel />
       <PropertiesPanel />
+      
+      {/* 👇 Mount the Export Modal */}
+      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
 
       <ReactFlow
         nodes={nodes}
@@ -124,7 +126,7 @@ export default function Canvas() {
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeDragStart={onNodeDragStart} 
-        onSelectionChange={onSelectionChange} // 👈 Attach selection listener
+        onSelectionChange={onSelectionChange} 
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >

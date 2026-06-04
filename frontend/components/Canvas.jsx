@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo } from 'react';
-import ReactFlow, { MiniMap, Controls, Background, BackgroundVariant } from 'reactflow';
+// 👇 1. Import useEffect and ControlButton
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import ReactFlow, { MiniMap, Controls, Background, BackgroundVariant, ControlButton } from 'reactflow';
 import { useStore } from '../app/store';
 import AwsNode from './AwsNode';
-import AwsEdge from './AwsEdge'; // 👈 Import the edge
+import AwsEdge from './AwsEdge';
+import IssuesPanel from './IssuesPanel';
+import { Undo2, Redo2 } from 'lucide-react'; // 👈 2. Import icons
 import 'reactflow/dist/style.css';
 
 let id = 3;
@@ -14,11 +17,38 @@ export default function Canvas() {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode } = useStore();
+  // 👇 3. Pull our history functions from the store
+  const { 
+    nodes, edges, onNodesChange, onEdgesChange, onConnect, 
+    addNode, takeSnapshot, undo, redo, past, future 
+  } = useStore();
 
-  // 👇 Register both our custom node AND custom edge
   const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
   const edgeTypes = useMemo(() => ({ awsEdge: AwsEdge }), []);
+
+  // 👇 4. Keyboard Shortcuts Hook
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Check for Ctrl/Cmd + Z (Undo) or Ctrl/Cmd + Y / Shift+Z (Redo)
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if ((event.ctrlKey || event.metaKey) && event.key === 'y') {
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
+  // 👇 5. Snapshot before a node starts moving
+  const onNodeDragStart = useCallback(() => {
+    takeSnapshot();
+  }, [takeSnapshot]);
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -49,7 +79,6 @@ export default function Canvas() {
     [reactFlowInstance, addNode]
   );
 
-  // 👇 Our Phase 1 Exit Criteria: The JSON State Logger
   const logState = () => {
     const currentState = { nodes, edges };
     console.log("🔥 CURRENT ARCHITECTURE STATE 🔥");
@@ -59,7 +88,6 @@ export default function Canvas() {
 
   return (
     <div className="w-full h-full flex-1 relative" ref={reactFlowWrapper}>
-      {/* Floating Action Button */}
       <div className="absolute top-4 right-4 z-10">
         <button 
           onClick={logState}
@@ -69,20 +97,32 @@ export default function Canvas() {
         </button>
       </div>
 
+      <IssuesPanel />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes} // 👈 Pass edgeTypes to ReactFlow
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onDragOver={onDragOver}
+        onNodeDragStart={onNodeDragStart} // 👈 Added drag listener
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
-        <Controls />
+        {/* 👇 6. Custom UI Buttons for Undo/Redo */}
+        <Controls>
+          <ControlButton onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
+            <Undo2 className="w-4 h-4 text-slate-700" />
+          </ControlButton>
+          <ControlButton onClick={redo} disabled={future.length === 0} title="Redo (Ctrl+Y)">
+            <Redo2 className="w-4 h-4 text-slate-700" />
+          </ControlButton>
+        </Controls>
         <MiniMap />
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
       </ReactFlow>

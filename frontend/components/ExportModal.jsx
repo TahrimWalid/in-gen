@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../app/store';
 import { compileToTerraform } from '../lib/compiler';
-import { X, Copy, Check } from 'lucide-react';
+import { X, Copy, Check, ImageDown } from 'lucide-react';
 
-export default function ExportModal({ isOpen, onClose }) {
+export default function ExportModal({ isOpen, onClose, onExportPng, isExportingPng }) {
   const { nodes, edges } = useStore();
   const [code, setCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState('hcl');
 
-  // Re-compile whenever the modal opens
   useEffect(() => {
     if (isOpen) {
       setCode(compileToTerraform(nodes, edges));
@@ -29,34 +29,66 @@ export default function ExportModal({ isOpen, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
       <div className="bg-slate-900 w-full max-w-4xl max-h-[80vh] rounded-xl shadow-2xl flex flex-col border border-slate-700 overflow-hidden">
-        
-        {/* Header */}
+
         <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900">
           <div className="flex items-center gap-3">
             <h2 className="text-white font-bold text-lg">Export Architecture</h2>
-            <span className="bg-purple-500/20 text-purple-400 text-xs px-2 py-1 rounded font-mono font-bold border border-purple-500/30">
-              Terraform (HCL)
-            </span>
+            <div className="flex rounded-md overflow-hidden border border-slate-700 text-xs font-semibold">
+              <button
+                onClick={() => setActiveTab('hcl')}
+                className={`px-3 py-1.5 transition-colors ${
+                  activeTab === 'hcl'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                Terraform HCL
+              </button>
+              <button
+                onClick={() => setActiveTab('png')}
+                className={`px-3 py-1.5 transition-colors ${
+                  activeTab === 'png'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                PNG Image
+              </button>
+            </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Code Editor Area */}
-        <div className="relative flex-1 bg-[#1e1e1e] overflow-auto p-6">
-          <button 
-            onClick={handleCopy}
-            className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
-          >
-            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            {copied ? 'Copied!' : 'Copy Code'}
-          </button>
-          
-          <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
-            <code>{code}</code>
-          </pre>
-        </div>
+        {activeTab === 'hcl' ? (
+          <div className="relative flex-1 bg-[#1e1e1e] overflow-auto p-6">
+            <button
+              onClick={handleCopy}
+              className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              {copied ? 'Copied!' : 'Copy Code'}
+            </button>
+            <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
+              <code>{code}</code>
+            </pre>
+          </div>
+        ) : (
+          <div className="flex-1 bg-[#1e1e1e] flex flex-col items-center justify-center gap-4 p-8">
+            <p className="text-slate-400 text-sm text-center max-w-sm">
+              Exports the full diagram as a PNG at 2× resolution. All nodes and edges are included regardless of current viewport.
+            </p>
+            <button
+              onClick={onExportPng}
+              disabled={isExportingPng}
+              className="px-6 py-3 bg-purple-600 text-white rounded-md font-semibold hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              <ImageDown className="w-5 h-5" />
+              {isExportingPng ? 'Exporting...' : 'Download ingen-diagram.png'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

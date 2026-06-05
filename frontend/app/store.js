@@ -3,50 +3,159 @@ import { persist } from 'zustand/middleware'; // 👈 1. Import persist middlewa
 import { applyNodeChanges, applyEdgeChanges, addEdge } from 'reactflow';
 import { validateArchitecture } from '../lib/ValidationEngine';
 
+let autoSaveTimer = null;
+
 // 👇 2. Wrap the store creator in persist()
 export const useStore = create(
   persist(
     (set, get) => ({
       nodes: [],
       edges: [],
-      issues: [], 
+      issues: [],
       past: [],
       future: [],
       selectedElement: null,
+      pendingFitView: false,
+      diagrams: [],
+      activeDiagramId: null,
+      diagramName: 'Untitled Architecture',
+      saveStatus: 'idle',
 
       setSelectedElement: (element) => set({ selectedElement: element }),
 
+      initDiagrams: () => {
+        try {
+          const stored = JSON.parse(localStorage.getItem('ingen-diagrams') || '[]');
+          const activeId = localStorage.getItem('ingen-active-diagram');
+          const active = activeId ? stored.find(d => d.id === activeId) : null;
+          if (active) {
+            set({ diagrams: stored, activeDiagramId: activeId, diagramName: active.name, nodes: active.nodes, edges: active.edges });
+            get().runValidation();
+          } else {
+            set({ diagrams: stored });
+          }
+        } catch { /* SSR or corrupt data */ }
+      },
+
+      setDiagramName: (name) => set({ diagramName: name }),
+
+      saveDiagram: () => {
+        const { nodes, edges, diagramName, activeDiagramId, diagrams } = get();
+        if (nodes.length === 0 && !activeDiagramId) return;
+        const now = new Date().toISOString();
+        let updatedDiagrams;
+        let newActiveId = activeDiagramId;
+        if (activeDiagramId) {
+          updatedDiagrams = diagrams.map(d =>
+            d.id === activeDiagramId ? { ...d, name: diagramName, nodes, edges, updatedAt: now } : d
+          );
+        } else {
+          const newId = crypto.randomUUID();
+          newActiveId = newId;
+          updatedDiagrams = [{ id: newId, name: diagramName, createdAt: now, updatedAt: now, nodes, edges }, ...diagrams];
+        }
+        set({ diagrams: updatedDiagrams, activeDiagramId: newActiveId });
+        try {
+          localStorage.setItem('ingen-diagrams', JSON.stringify(updatedDiagrams));
+          localStorage.setItem('ingen-active-diagram', newActiveId);
+        } catch { /* ignore */ }
+      },
+
+      scheduleAutoSave: () => {
+        clearTimeout(autoSaveTimer);
+        set({ saveStatus: 'saving' });
+        autoSaveTimer = setTimeout(() => {
+          get().saveDiagram();
+          set({ saveStatus: 'saved' });
+          setTimeout(() => set({ saveStatus: 'idle' }), 2000);
+        }, 2000);
+      },
+
+      loadDiagram: (id) => {
+        const diagram = get().diagrams.find(d => d.id === id);
+        if (!diagram) return;
+        clearTimeout(autoSaveTimer);
+        get().takeSnapshot();
+        set({ nodes: diagram.nodes, edges: diagram.edges, diagramName: diagram.name, activeDiagramId: id, selectedElement: null, pendingFitView: true, saveStatus: 'idle' });
+        get().runValidation();
+        try { localStorage.setItem('ingen-active-diagram', id); } catch { /* ignore */ }
+      },
+
+      deleteDiagram: (id) => {
+        const { diagrams, activeDiagramId } = get();
+        const updated = diagrams.filter(d => d.id !== id);
+        set({ diagrams: updated });
+        if (activeDiagramId === id) {
+          clearTimeout(autoSaveTimer);
+          set({ nodes: [], edges: [], issues: [], activeDiagramId: null, diagramName: 'Untitled Architecture', selectedElement: null, saveStatus: 'idle' });
+          try { localStorage.removeItem('ingen-active-diagram'); } catch { /* ignore */ }
+        }
+        try { localStorage.setItem('ingen-diagrams', JSON.stringify(updated)); } catch { /* ignore */ }
+      },
+
+      renameDiagram: (id, newName) => {
+        const name = newName.trim() || 'Untitled Architecture';
+        const { diagrams, activeDiagramId } = get();
+        const updated = diagrams.map(d => d.id === id ? { ...d, name, updatedAt: new Date().toISOString() } : d);
+        set({ diagrams: updated });
+        if (id === activeDiagramId) set({ diagramName: name });
+        try { localStorage.setItem('ingen-diagrams', JSON.stringify(updated)); } catch { /* ignore */ }
+      },
+
+      newDiagram: () => {
+        clearTimeout(autoSaveTimer);
+        get().takeSnapshot();
+        set({ nodes: [], edges: [], issues: [], activeDiagramId: null, diagramName: 'Untitled Architecture', selectedElement: null, saveStatus: 'idle' });
+        try { localStorage.removeItem('ingen-active-diagram'); } catch { /* ignore */ }
+      },
+
+      loadFromSharedUrl: (nodes, edges) => {
+        clearTimeout(autoSaveTimer);
+        set({ nodes, edges, issues: [], activeDiagramId: null, diagramName: 'Shared Architecture', selectedElement: null, pendingFitView: true, saveStatus: 'idle' });
+        get().runValidation();
+      },
+
+      loadTemplate: (template) => {
+        clearTimeout(autoSaveTimer);
+        set({ saveStatus: 'idle' });
+        get().takeSnapshot();
+        const idMap = {};
+        template.nodes.forEach(n => { idMap[n.id] = crypto.randomUUID(); });
+        const nodes = template.nodes.map(n => ({ ...n, id: idMap[n.id] }));
+        const edges = template.edges.map(e => ({
+          ...e,
+          id: crypto.randomUUID(),
+          source: idMap[e.source],
+          target: idMap[e.target],
+        }));
+        set({ nodes, edges, issues: [], selectedElement: null, pendingFitView: true });
+        get().runValidation();
+      },
+
+      clearPendingFitView: () => set({ pendingFitView: false }),
+
       // 👇 3. The Nuke Button Action (Task 8.2)
       clearCanvas: () => {
-        get().takeSnapshot(); // Take a snapshot so the user can hit Undo if they accidentally clear!
-        set({
-          nodes: [],
-          edges: [],
-          issues: [],
-          selectedElement: null,
-        });
+        clearTimeout(autoSaveTimer);
+        set({ saveStatus: 'idle' });
+        get().takeSnapshot();
+        set({ nodes: [], edges: [], issues: [], selectedElement: null });
       },
 
       updateNodeData: (nodeId, newData) => {
         get().takeSnapshot();
-        set({
-          nodes: get().nodes.map((node) => 
-            node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
-          )
-        });
+        set({ nodes: get().nodes.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node) });
         get().runValidation();
         set({ selectedElement: { ...get().nodes.find(n => n.id === nodeId), elementType: 'node' } });
+        get().scheduleAutoSave();
       },
 
       updateEdgeData: (edgeId, newData) => {
         get().takeSnapshot();
-        set({
-          edges: get().edges.map((edge) => 
-            edge.id === edgeId ? { ...edge, data: { ...edge.data, ...newData } } : edge
-          )
-        });
+        set({ edges: get().edges.map((edge) => edge.id === edgeId ? { ...edge, data: { ...edge.data, ...newData } } : edge) });
         get().runValidation();
         set({ selectedElement: { ...get().edges.find(e => e.id === edgeId), elementType: 'edge' } });
+        get().scheduleAutoSave();
       },
 
       runValidation: () => {
@@ -92,14 +201,16 @@ export const useStore = create(
         if (changes.some(c => c.type !== 'position' && c.type !== 'dimensions')) {
           get().runValidation();
         }
+        get().scheduleAutoSave();
       },
-      
+
       onEdgesChange: (changes) => {
         if (changes.some(c => c.type === 'remove')) get().takeSnapshot();
         set({ edges: applyEdgeChanges(changes, get().edges) });
         get().runValidation();
+        get().scheduleAutoSave();
       },
-      
+
       onConnect: (connection) => {
         get().takeSnapshot();
         const semanticConnection = {
@@ -108,8 +219,9 @@ export const useStore = create(
         };
         set({ edges: addEdge(semanticConnection, get().edges) });
         get().runValidation();
+        get().scheduleAutoSave();
       },
-      
+
       addNode: (node) => {
         get().takeSnapshot();
         const serviceDefaults = {
@@ -125,6 +237,7 @@ export const useStore = create(
         };
         set({ nodes: [...get().nodes, enriched] });
         get().runValidation();
+        get().scheduleAutoSave();
       },
     }),
     {

@@ -132,3 +132,8 @@ body {
   fill: var(--surface-alt);
   fill-opacity: 0.6;
 }
+
+/* ── Resize handle ── */
+.resize-handle-outer:hover .resize-handle-bar {
+  background: rgba(147, 51, 234, 0.3) !important;
+}

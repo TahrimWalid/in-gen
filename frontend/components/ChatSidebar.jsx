@@ -14,7 +14,7 @@ function formatTime(date) {
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-export default function ChatSidebar({ isOpen, onClose }) {
+export default function ChatSidebar({ onClose }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -82,11 +82,7 @@ export default function ChatSidebar({ isOpen, onClose }) {
   };
 
   return (
-    <div
-      className={`fixed top-0 right-0 h-full w-80 bg-surface border-l border-border shadow-2xl z-30 flex flex-col transition-transform duration-300 ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}
-    >
+    <div className="w-full h-full flex flex-col bg-surface border-l border-border shadow-2xl">
       <div className="bg-header-bg px-4 py-3 flex justify-between items-center shrink-0 border-b border-white/10">
         <div className="flex items-center gap-2.5">
           <h3 className="font-bold text-header-text text-sm tracking-wide">AI Architect</h3>
@@ -94,7 +90,11 @@ export default function ChatSidebar({ isOpen, onClose }) {
             β
           </span>
         </div>
-        <button onClick={onClose} className="text-muted hover:text-header-text transition-colors">
+        <button
+          onClick={onClose}
+          title="Close (Ctrl+Shift+A)"
+          className="text-muted hover:text-header-text transition-colors"
+        >
           <X className="w-5 h-5" />
         </button>
       </div>

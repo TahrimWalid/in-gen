@@ -1,13 +1,153 @@
+'use client';
+
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Group, Panel } from 'react-resizable-panels';
 import Canvas from '@/components/Canvas';
 import Sidebar from '@/components/Sidebar';
+import ChatSidebar from '@/components/ChatSidebar';
+import ResizeHandle from '@/components/ResizeHandle';
+
+const LEFT_WIDTH_KEY = 'ingen-sidebar-left-width';
+const LEFT_COLLAPSED_KEY = 'ingen-sidebar-left-collapsed';
+const RIGHT_WIDTH_KEY = 'ingen-sidebar-right-width';
+
+const DEFAULT_LEFT_WIDTH = 280;
+const DEFAULT_RIGHT_WIDTH = 340;
+const LEFT_COLLAPSED_SIZE = 48;
+
+function readLocalInt(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? parseInt(v, 10) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function Home() {
+  const leftPanelRef = useRef(null);
+  const rightPanelRef = useRef(null);
+  const lastLeftPixels = useRef(DEFAULT_LEFT_WIDTH);
+  const lastRightPixels = useRef(DEFAULT_RIGHT_WIDTH);
+
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
+  });
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Compute the left panel's starting pixel size from localStorage
+  const [initialLeftSize] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_LEFT_WIDTH;
+    const collapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
+    if (collapsed) return LEFT_COLLAPSED_SIZE;
+    return readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
+  });
+
+  const toggleLeftSidebar = useCallback(() => {
+    const panel = leftPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      const width = readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
+      panel.resize(width);
+    } else {
+      panel.collapse();
+    }
+  }, []);
+
+  const toggleChat = useCallback(() => {
+    const panel = rightPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      const width = readLocalInt(RIGHT_WIDTH_KEY, DEFAULT_RIGHT_WIDTH);
+      panel.resize(width);
+    } else {
+      panel.collapse();
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'b') {
+        e.preventDefault();
+        toggleLeftSidebar();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        toggleChat();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [toggleLeftSidebar, toggleChat]);
+
+  const handleLeftResize = useCallback((size) => {
+    const px = size.inPixels;
+    const collapsed = px <= LEFT_COLLAPSED_SIZE;
+    setIsLeftCollapsed(collapsed);
+    localStorage.setItem(LEFT_COLLAPSED_KEY, String(collapsed));
+    if (!collapsed) {
+      lastLeftPixels.current = px;
+      localStorage.setItem(LEFT_WIDTH_KEY, String(Math.round(px)));
+    }
+  }, []);
+
+  const handleRightResize = useCallback((size) => {
+    const px = size.inPixels;
+    const open = px > 0;
+    setIsChatOpen(open);
+    if (open) {
+      lastRightPixels.current = px;
+      localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(px)));
+    }
+  }, []);
+
   return (
-    <main className="w-screen h-screen bg-surface-alt flex overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 h-full">
-        <Canvas />
-      </div>
+    <main className="w-screen h-screen overflow-hidden">
+      <Group orientation="horizontal" className="h-full">
+        <Panel
+          id="left-sidebar"
+          panelRef={leftPanelRef}
+          defaultSize={initialLeftSize}
+          minSize={200}
+          maxSize={400}
+          collapsible
+          collapsedSize={LEFT_COLLAPSED_SIZE}
+          groupResizeBehavior="preserve-pixel-size"
+          onResize={handleLeftResize}
+        >
+          <Sidebar collapsed={isLeftCollapsed} onToggle={toggleLeftSidebar} />
+        </Panel>
+
+        <ResizeHandle id="left-sep" />
+
+        <Panel
+          id="canvas"
+          groupResizeBehavior="preserve-relative-size"
+        >
+          <Canvas onToggleChat={toggleChat} isChatOpen={isChatOpen} />
+        </Panel>
+
+        <ResizeHandle
+          id="right-sep"
+          style={{ opacity: isChatOpen ? 1 : 0, pointerEvents: isChatOpen ? 'auto' : 'none' }}
+        />
+
+        <Panel
+          id="right-sidebar"
+          panelRef={rightPanelRef}
+          defaultSize={0}
+          minSize={280}
+          maxSize={520}
+          collapsible
+          collapsedSize={0}
+          groupResizeBehavior="preserve-pixel-size"
+          onResize={handleRightResize}
+        >
+          <ChatSidebar onClose={() => rightPanelRef.current?.collapse()} />
+        </Panel>
+      </Group>
     </main>
   );
 }

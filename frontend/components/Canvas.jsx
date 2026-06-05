@@ -9,7 +9,6 @@ import AwsEdge from './AwsEdge';
 import IssuesPanel from './IssuesPanel';
 import PropertiesPanel from './PropertiesPanel';
 import NodePropertiesPanel from './NodePropertiesPanel';
-import ChatSidebar from './ChatSidebar';
 import ExportModal from './ExportModal';
 import TemplatesModal from './TemplatesModal';
 import DiagramsPanel from './DiagramsPanel';
@@ -43,11 +42,10 @@ async function decodeState(param) {
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
-export default function Canvas() {
+export default function Canvas({ onToggleChat, isChatOpen }) {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isDiagramsPanelOpen, setIsDiagramsPanelOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -300,18 +298,6 @@ export default function Canvas() {
         </button>
 
         <button
-          onClick={() => setIsChatOpen(o => !o)}
-          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
-            isChatOpen
-              ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
-              : 'border-purple-500 text-purple-600 hover:bg-purple-500/10'
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-          AI Architect
-        </button>
-
-        <button
           onClick={() => setIsExportOpen(true)}
           className="h-9 bg-purple-600 text-white px-4 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
         >
@@ -341,10 +327,26 @@ export default function Canvas() {
         </div>
       )}
 
+      {/* Persistent AI Architect tab on canvas right edge */}
+      <button
+        onClick={onToggleChat}
+        title="AI Architect (Ctrl+Shift+A)"
+        className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1.5 py-4 px-1.5 rounded-l-lg shadow-lg text-white transition-colors ${
+          isChatOpen ? 'bg-purple-500' : 'bg-purple-600 hover:bg-purple-500'
+        }`}
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+        <span
+          className="text-xs font-bold tracking-wider"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          AI Architect
+        </span>
+      </button>
+
       <IssuesPanel />
       <PropertiesPanel />
       <NodePropertiesPanel />
-      <ChatSidebar isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} onExportPng={handleExportPng} isExportingPng={isExportingPng} />
       <TemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} />
       <DiagramsPanel isOpen={isDiagramsPanelOpen} onClose={() => setIsDiagramsPanelOpen(false)} />

@@ -4,7 +4,6 @@ import { useStore } from '../app/store';
 import {
   Zap, Globe, Database, HardDrive,
   Activity, Layers, MessageSquare, ShieldCheck,
-  AlertCircle, AlertTriangle
 } from 'lucide-react';
 
 const serviceConfig = {
@@ -38,14 +37,20 @@ export default function AwsNode({ id, data, selected }) {
     }`}>
 
       {nodeIssues.length > 0 && (
-        <div className="absolute -top-3 -right-3 z-10 flex shadow-sm rounded-full animate-bounce-short">
+        <div className="absolute -top-2.5 -right-2.5 z-10">
           {hasErrors ? (
-            <div className="bg-red-100 p-1.5 rounded-full border border-red-300 text-red-600" title="This node has critical errors. Check the Issues Panel.">
-              <AlertCircle className="w-4 h-4" />
+            <div
+              className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold leading-none shadow-sm animate-badge-pulse"
+              title="This node has critical errors. Check the Issues Panel."
+            >
+              !
             </div>
           ) : (
-            <div className="bg-amber-100 p-1.5 rounded-full border border-amber-300 text-amber-600" title="This node has warnings. Check the Issues Panel.">
-              <AlertTriangle className="w-4 h-4" />
+            <div
+              className="w-5 h-5 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs font-bold leading-none shadow-sm"
+              title="This node has warnings. Check the Issues Panel."
+            >
+              !
             </div>
           )}
         </div>

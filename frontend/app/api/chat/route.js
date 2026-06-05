@@ -1,4 +1,6 @@
-const SYSTEM_PROMPT = `You are a senior AWS solutions architect reviewing a serverless architecture diagram in InGen, a visual infrastructure design tool.
+const SYSTEM_PROMPT = `/no_think
+
+You are a senior AWS solutions architect reviewing a serverless architecture diagram in InGen, a visual infrastructure design tool.
 
 You will receive the current diagram state as a JSON graph with nodes and edges. Each node has a type (lambda, apiGateway, s3, dynamodb, sqs, sns, eventbridge, cognito) and a data object with configuration properties. Each edge has semantic metadata including authType and invocationType.
 
@@ -63,7 +65,11 @@ export async function POST(req) {
       });
     }
 
-    return Response.json({ content: data.choices[0].message.content });
+    let content = data.choices[0].message.content;
+    const thinkEnd = content.indexOf('</think>');
+    if (thinkEnd !== -1) content = content.slice(thinkEnd + 8).trimStart();
+
+    return Response.json({ content });
   } catch {
     return Response.json({
       error: 'Failed to reach LLM endpoint. Check LLM_BASE_URL in .env.local.',

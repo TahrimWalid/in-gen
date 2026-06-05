@@ -1,1 +1,5 @@
 CLAUDE.md
+
+# env files (can opt-in for committing if needed)
+.env*
+.env.local

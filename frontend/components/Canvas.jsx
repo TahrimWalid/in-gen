@@ -237,19 +237,20 @@ export default function Canvas() {
       </div>
 
       {/* Top Right Action Buttons */}
-      <div className="absolute top-4 right-4 z-10 flex gap-2">
-        {/* 👇 The new Clear Canvas Button */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
         <button
           onClick={toggleTheme}
-          className="bg-surface border border-border text-secondary px-3 py-2 rounded-md shadow-sm hover:bg-surface-hover text-sm font-bold transition-all flex items-center gap-2"
+          className="h-9 w-9 bg-surface border border-border text-secondary rounded-md shadow-sm hover:bg-surface-hover transition-all flex items-center justify-center"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
+        <div className="w-px h-6 bg-border" />
+
         <button
           onClick={() => setIsDiagramsPanelOpen(o => !o)}
-          className={`border px-3 py-2 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
+          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
             isDiagramsPanelOpen
               ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
               : 'bg-surface border-border text-secondary hover:bg-surface-hover'
@@ -268,7 +269,7 @@ export default function Canvas() {
               ? 'Diagram too large to share via URL. Save it and share the diagram name instead.'
               : 'Copy shareable link to clipboard'
           }
-          className={`border px-3 py-2 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 disabled:opacity-40 ${
+          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 disabled:opacity-40 ${
             shareStatus === 'copied'
               ? 'bg-emerald-600 border-emerald-600 text-white'
               : shareStatus === 'toolarge'
@@ -282,7 +283,7 @@ export default function Canvas() {
 
         <button
           onClick={() => setIsTemplatesOpen(true)}
-          className="bg-surface border border-border text-secondary px-3 py-2 rounded-md shadow-sm hover:bg-surface-hover text-sm font-bold transition-all flex items-center gap-2"
+          className="h-9 bg-surface border border-border text-secondary px-3 rounded-md shadow-sm hover:bg-surface-hover text-sm font-bold transition-all flex items-center gap-2"
           title="Browse architecture templates"
         >
           <LayoutTemplate className="w-4 h-4" />
@@ -291,7 +292,7 @@ export default function Canvas() {
 
         <button
           onClick={clearCanvas}
-          className="bg-surface border border-border text-red-600 px-3 py-2 rounded-md shadow-sm hover:bg-red-50 text-sm font-bold transition-all flex items-center gap-2"
+          className="h-9 border border-red-500 text-red-600 px-3 rounded-md shadow-sm hover:bg-red-500/10 text-sm font-bold transition-all flex items-center gap-2"
           title="Clear entire canvas"
         >
           <Trash2 className="w-4 h-4" />
@@ -300,10 +301,10 @@ export default function Canvas() {
 
         <button
           onClick={() => setIsChatOpen(o => !o)}
-          className={`border px-3 py-2 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
+          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
             isChatOpen
               ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
-              : 'bg-surface border-border text-secondary hover:bg-surface-hover'
+              : 'border-purple-500 text-purple-600 hover:bg-purple-500/10'
           }`}
         >
           <Sparkles className="w-4 h-4" />
@@ -312,7 +313,7 @@ export default function Canvas() {
 
         <button
           onClick={() => setIsExportOpen(true)}
-          className="bg-purple-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
+          className="h-9 bg-purple-600 text-white px-4 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
         >
           <Code2 className="w-4 h-4" />
           Export Terraform

@@ -13,18 +13,33 @@ export default function IssuesPanel() {
 
   if (nodes.length === 0) return null;
 
+  const errors   = issues.filter(i => i.severity === 'error');
+  const warnings = issues.filter(i => i.severity === 'warning');
+
   return (
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl bg-surface border border-border rounded-lg shadow-2xl overflow-hidden z-10 flex flex-col max-h-64">
 
-      <div className="bg-header-bg px-4 py-3 flex justify-between items-center shrink-0">
-        <h3 className="font-bold text-header-text flex items-center gap-2">
+      <div className="bg-header-bg px-5 py-3.5 flex justify-between items-center shrink-0">
+        <h3 className="font-bold text-header-text text-sm tracking-wide">
           Validation Engine
         </h3>
-        <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-          issues.length === 0 ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
-        }`}>
-          {issues.length} {issues.length === 1 ? 'Issue' : 'Issues'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {errors.length > 0 && (
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-500 text-white">
+              {errors.length} Error{errors.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {warnings.length > 0 && (
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-white">
+              {warnings.length} Warning{warnings.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {issues.length === 0 && (
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500 text-white">
+              All Clear
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="overflow-y-auto p-4 flex flex-col gap-3 bg-surface-alt">
@@ -37,10 +52,10 @@ export default function IssuesPanel() {
           issues.map((issue, idx) => (
             <div
               key={idx}
-              className={`flex items-start gap-3 p-3 rounded-md border shadow-sm ${
+              className={`flex items-start gap-3 p-3 rounded-md border border-l-[3px] shadow-sm ${
                 issue.severity === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-900'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
+                  ? 'bg-red-50 border-red-200 border-l-red-500 text-red-900'
+                  : 'bg-amber-50 border-amber-200 border-l-amber-500 text-amber-900'
               }`}
             >
               {issue.severity === 'error' ? (

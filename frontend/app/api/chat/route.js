@@ -154,9 +154,10 @@ export async function POST(req) {
     }
 
     return Response.json({ type: 'chat', textResponse: content });
-  } catch {
+  } catch (error) {
+    console.error("Vercel Fetch Error:", error);
     return Response.json({
-      error: 'Failed to reach LLM endpoint. Check LLM_BASE_URL in .env.local.',
+      error: `System Crash: ${error.message || 'Unknown network error'}`
     });
   }
 }

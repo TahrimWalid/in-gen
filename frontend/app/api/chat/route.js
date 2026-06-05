@@ -1,5 +1,3 @@
-export const maxDuration = 120; // Allow Vercel to wait up to 120s for the GPU
-
 const SYSTEM_PROMPT = `/no_think
 You are a senior AWS solutions architect and infrastructure designer working inside InGen, a visual AWS architecture tool.
 
@@ -154,10 +152,9 @@ export async function POST(req) {
     }
 
     return Response.json({ type: 'chat', textResponse: content });
-  } catch (error) {
-    console.error("Vercel Fetch Error:", error);
+  } catch {
     return Response.json({
-      error: `System Crash: ${error.message || 'Unknown network error'}`
+      error: 'Failed to reach LLM endpoint. Check LLM_BASE_URL in .env.local.',
     });
   }
 }

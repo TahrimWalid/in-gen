@@ -11,7 +11,7 @@ export default function AwsEdge({
   targetPosition,
   style = {},
   data,
-  selected, // 👈 ReactFlow passes this automatically when clicked
+  selected,
 }) {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -24,7 +24,6 @@ export default function AwsEdge({
 
   return (
     <>
-      {/* 1. The Invisible Hitbox: Thick and transparent for easy clicking */}
       <path
         d={edgePath}
         fill="none"
@@ -32,8 +31,7 @@ export default function AwsEdge({
         strokeWidth={20}
         className="react-flow__edge-interaction cursor-pointer"
       />
-      
-      {/* 2. The Visible Line: Changes color if selected */}
+
       <path
         id={id}
         style={style}
@@ -43,8 +41,7 @@ export default function AwsEdge({
         }`}
         d={edgePath}
       />
-      
-      {/* Optional: Render a small label if the edge has data we want to show */}
+
       {data?.invocationType && (
         <EdgeLabelRenderer>
           <div
@@ -53,8 +50,8 @@ export default function AwsEdge({
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: 'all',
             }}
-            className={`nodrag nopan bg-white border px-2 py-1 rounded-md text-[10px] font-bold shadow-sm transition-colors ${
-              selected ? 'border-blue-500 text-blue-600' : 'border-slate-200 text-slate-500'
+            className={`nodrag nopan bg-surface border px-2 py-1 rounded-md text-[10px] font-bold shadow-sm transition-colors ${
+              selected ? 'border-blue-500 text-blue-600' : 'border-border text-muted'
             }`}
           >
             {data.invocationType}

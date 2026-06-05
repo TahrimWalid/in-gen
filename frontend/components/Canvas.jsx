@@ -10,7 +10,8 @@ import PropertiesPanel from './PropertiesPanel';
 import NodePropertiesPanel from './NodePropertiesPanel';
 import ChatSidebar from './ChatSidebar';
 import ExportModal from './ExportModal';
-import { Undo2, Redo2, Code2, Trash2, Sparkles } from 'lucide-react';
+import { Undo2, Redo2, Code2, Trash2, Sparkles, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../app/useTheme';
 import 'reactflow/dist/style.css';
 
 const getId = () => crypto.randomUUID();
@@ -20,6 +21,7 @@ export default function Canvas() {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
   
   const { 
     nodes, edges, onNodesChange, onEdgesChange, onConnect, 
@@ -91,14 +93,22 @@ export default function Canvas() {
   );
 
   return (
-    <div className="w-full h-full flex-1 relative" ref={reactFlowWrapper}>
+    <div className="w-full h-full flex-1 relative" style={{ background: 'var(--canvas-bg)' }} ref={reactFlowWrapper}>
       
       {/* Top Right Action Buttons */}
       <div className="absolute top-4 right-4 z-10 flex gap-2">
         {/* 👇 The new Clear Canvas Button */}
         <button
+          onClick={toggleTheme}
+          className="bg-surface border border-border text-secondary px-3 py-2 rounded-md shadow-sm hover:bg-surface-hover text-sm font-bold transition-all flex items-center gap-2"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        <button
           onClick={clearCanvas}
-          className="bg-white border border-slate-200 text-red-600 px-3 py-2 rounded-md shadow-sm hover:bg-red-50 text-sm font-bold transition-all flex items-center gap-2"
+          className="bg-surface border border-border text-red-600 px-3 py-2 rounded-md shadow-sm hover:bg-red-50 text-sm font-bold transition-all flex items-center gap-2"
           title="Clear entire canvas"
         >
           <Trash2 className="w-4 h-4" />
@@ -110,7 +120,7 @@ export default function Canvas() {
           className={`border px-3 py-2 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
             isChatOpen
               ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
-              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              : 'bg-surface border-border text-secondary hover:bg-surface-hover'
           }`}
         >
           <Sparkles className="w-4 h-4" />
@@ -150,14 +160,19 @@ export default function Canvas() {
       >
         <Controls>
           <ControlButton onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
-            <Undo2 className="w-4 h-4 text-slate-700" />
+            <Undo2 className="w-4 h-4 text-secondary" />
           </ControlButton>
           <ControlButton onClick={redo} disabled={future.length === 0} title="Redo (Ctrl+Y)">
-            <Redo2 className="w-4 h-4 text-slate-700" />
+            <Redo2 className="w-4 h-4 text-secondary" />
           </ControlButton>
         </Controls>
         <MiniMap />
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={16}
+          size={1}
+          color={theme === 'dark' ? '#374151' : '#cbd5e1'}
+        />
       </ReactFlow>
     </div>
   );

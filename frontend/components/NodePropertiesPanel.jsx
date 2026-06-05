@@ -10,7 +10,7 @@ function Toggle({ checked, onChange }) {
       type="button"
       onClick={() => onChange(!checked)}
       className={`relative inline-flex w-10 h-6 rounded-full transition-colors shrink-0 ${
-        checked ? 'bg-emerald-500' : 'bg-slate-300'
+        checked ? 'bg-emerald-500' : 'bg-border'
       }`}
     >
       <span
@@ -25,7 +25,7 @@ function Toggle({ checked, onChange }) {
 function Field({ label, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-bold text-slate-500 uppercase">{label}</label>
+      <label className="text-xs font-bold text-muted uppercase">{label}</label>
       {children}
     </div>
   );
@@ -34,14 +34,14 @@ function Field({ label, children }) {
 function ToggleField({ label, checked, onChange }) {
   return (
     <div className="flex items-center justify-between py-0.5">
-      <span className="text-xs font-bold text-slate-500 uppercase">{label}</span>
+      <span className="text-xs font-bold text-muted uppercase">{label}</span>
       <Toggle checked={checked} onChange={onChange} />
     </div>
   );
 }
 
 const inputClass =
-  'w-full px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500';
+  'w-full px-3 py-2 border border-border-input rounded-md text-sm text-input-text bg-input-bg focus:outline-none focus:ring-2 focus:ring-blue-500';
 
 export default function NodePropertiesPanel() {
   const { selectedElement, setSelectedElement, updateNodeData } = useStore();
@@ -54,19 +54,17 @@ export default function NodePropertiesPanel() {
   const update = (field, value) => updateNodeData(id, { [field]: value });
 
   return (
-    <div className="absolute bottom-6 right-4 w-80 bg-white border border-slate-200 rounded-lg shadow-xl z-20 flex flex-col max-h-[480px] overflow-hidden">
-      {/* Header */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center shrink-0">
-        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-          <Settings className="w-4 h-4 text-slate-500" />
+    <div className="absolute bottom-6 right-4 w-80 bg-surface border border-border rounded-lg shadow-xl z-20 flex flex-col max-h-[480px] overflow-hidden">
+      <div className="bg-surface-alt border-b border-border px-4 py-3 flex justify-between items-center shrink-0">
+        <h3 className="font-bold text-primary flex items-center gap-2">
+          <Settings className="w-4 h-4 text-muted" />
           Node Properties
         </h3>
-        <button onClick={() => setSelectedElement(null)} className="text-slate-400 hover:text-slate-600">
+        <button onClick={() => setSelectedElement(null)} className="text-muted hover:text-primary">
           <X className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Body */}
       <div className="p-4 flex flex-col gap-4 overflow-y-auto">
         <Field label="Resource Label">
           <input
@@ -120,7 +118,7 @@ export default function NodePropertiesPanel() {
                 onChange={(e) => update('visibilityTimeout', Number(e.target.value))}
                 className={inputClass}
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted mt-1">
                 Should be 6× your consuming Lambda&apos;s timeout to prevent duplicate processing
               </p>
             </Field>

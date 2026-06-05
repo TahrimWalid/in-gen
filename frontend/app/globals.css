@@ -1,30 +1,127 @@
 @import "tailwindcss";
 
+/* ── Light theme (default) ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background:     #ffffff;
+  --foreground:     #1e293b;
+
+  --surface:        #ffffff;
+  --surface-alt:    #f8fafc;
+  --surface-hover:  #f1f5f9;
+
+  --primary:        #1e293b;
+  --secondary:      #475569;
+  --muted:          #94a3b8;
+
+  --border:         #e2e8f0;
+  --border-input:   #cbd5e1;
+
+  --input-bg:       #ffffff;
+  --input-text:     #0f172a;
+
+  --header-bg:      #1e293b;
+  --header-text:    #f8fafc;
+
+  --canvas-bg:      #ffffff;
+  --canvas-dot:     #cbd5e1;
 }
 
+/* ── Dark theme overrides ── */
+[data-theme="dark"] {
+  --background:     #0f1117;
+  --foreground:     #e2e8f0;
+
+  --surface:        #1e2030;
+  --surface-alt:    #1a1d2e;
+  --surface-hover:  #252840;
+
+  --primary:        #e2e8f0;
+  --secondary:      #94a3b8;
+  --muted:          #64748b;
+
+  --border:         #374151;
+  --border-input:   #4b5563;
+
+  --input-bg:       #1e2030;
+  --input-text:     #f1f5f9;
+
+  --header-bg:      #111827;
+  --header-text:    #f8fafc;
+
+  --canvas-bg:      #0f1117;
+  --canvas-dot:     #374151;
+}
+
+/* ── Register tokens as Tailwind utilities ── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background:    var(--background);
+  --color-foreground:    var(--foreground);
+  --color-surface:       var(--surface);
+  --color-surface-alt:   var(--surface-alt);
+  --color-surface-hover: var(--surface-hover);
+  --color-primary:       var(--primary);
+  --color-secondary:     var(--secondary);
+  --color-muted:         var(--muted);
+  --color-border:        var(--border);
+  --color-border-input:  var(--border-input);
+  --color-input-bg:      var(--input-bg);
+  --color-input-text:    var(--input-text);
+  --color-header-bg:     var(--header-bg);
+  --color-header-text:   var(--header-text);
+  --font-sans:           var(--font-geist-sans);
+  --font-mono:           var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@theme {
+  --animate-bounce-short: bounce 1s ease-in-out 2.5;
+}
+
+/* ── Global transition (in base so utilities can override) ── */
+@layer base {
+  *, *::before, *::after {
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
 }
 
+/* ── Base styles ── */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
 
-@theme {
-  --animate-bounce-short: bounce 1s ease-in-out 2.5;
+/* ── Dark overrides for fixed Tailwind status/semantic classes ── */
+[data-theme="dark"] .bg-red-50       { background-color: #2d0a0a; }
+[data-theme="dark"] .border-red-200  { border-color: #7f1d1d; }
+[data-theme="dark"] .text-red-900    { color: #fca5a5; }
+[data-theme="dark"] .text-red-600    { color: #f87171; }
+
+[data-theme="dark"] .bg-amber-50     { background-color: #1c0f00; }
+[data-theme="dark"] .border-amber-200 { border-color: #78350f; }
+[data-theme="dark"] .text-amber-900  { color: #fcd34d; }
+[data-theme="dark"] .text-amber-600  { color: #fbbf24; }
+
+[data-theme="dark"] .text-emerald-600 { color: #34d399; }
+
+/* ── ReactFlow UI theming ── */
+[data-theme="dark"] .react-flow__controls {
+  background-color: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .react-flow__controls button {
+  background-color: var(--surface);
+  border-bottom-color: var(--border);
+  color: var(--primary);
+  fill: var(--primary);
+}
+
+[data-theme="dark"] .react-flow__minimap {
+  background-color: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+[data-theme="dark"] .react-flow__minimap-mask {
+  fill: var(--surface-alt);
+  fill-opacity: 0.6;
 }

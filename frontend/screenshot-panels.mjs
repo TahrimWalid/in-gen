@@ -30,92 +30,72 @@ async function clickNode(labelText) {
 }
 
 async function clickTab(tabLabel) {
-  const tab = page.locator('button').filter({ hasText: tabLabel }).first();
+  const tab = page.locator('button').filter({ hasText: new RegExp(`^${tabLabel}$`) }).first();
   await tab.click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
 }
 
-async function snap(filename) {
-  await page.waitForSelector('text=Node Properties', { timeout: 5000 });
-  const header = page.locator('text=Node Properties').first();
-  const box = await header.boundingBox();
-  const clip = { x: box.x - 8, y: box.y - 8, width: 336, height: 620 };
-  clip.height = Math.min(clip.height, 900 - clip.y);
-  writeFileSync(filename, await page.screenshot({ clip }));
-  console.log('Saved', filename);
+function snap(filename) {
+  return page.screenshot().then(buf => { writeFileSync(filename, buf); console.log('Saved', filename); });
 }
 
-// ── Lambda: Basic tab ─────────────────────────────────────────
-await dropNode('lambda', 'Lambda Function', 700, 400);
+// ── Test 1: Lambda nodejs16.x (EOL) → error badge ────────────
+await dropNode('lambda', 'Lambda Function', 600, 350);
 await clickNode('Lambda');
-await snap('p2-lambda-basic.png');
+// Basic tab is active — Runtime select is first select on page
+const runtimeSelect = page.locator('select').first();
+await runtimeSelect.selectOption('nodejs16.x');
+await page.waitForTimeout(600);
+await snap('p3-lambda-eol-runtime.png');
 
-// ── Lambda: Performance tab ───────────────────────────────────
-await clickTab('Perf');
-await snap('p2-lambda-perf.png');
-
-// ── Lambda: Security tab ──────────────────────────────────────
-await clickTab('Security');
-await snap('p2-lambda-security.png');
-
-// ── Lambda: Advanced tab (env vars) ──────────────────────────
-await clickTab('Advanced');
-await snap('p2-lambda-advanced.png');
-
-// Deselect
+// ── Test 2: S3 encryptionType = None → error ──────────────────
 await page.mouse.click(300, 650);
-await page.waitForTimeout(400);
-
-// ── DynamoDB: Provisioned → Performance shows capacity fields ─
-await dropNode('dynamodb', 'DynamoDB', 400, 300);
-await clickNode('DynamoDB');
-// Switch billing to PROVISIONED to test conditional fields
-await page.selectOption('select', 'PROVISIONED');
 await page.waitForTimeout(300);
-await clickTab('Perf');
-await snap('p2-dynamodb-perf-provisioned.png');
-
-await page.mouse.click(300, 650);
-await page.waitForTimeout(400);
-
-// ── Cognito: Security tab (password policy) ───────────────────
-await dropNode('cognito', 'Cognito Auth', 600, 500);
-await clickNode('Cognito');
+await dropNode('s3', 'S3 Bucket', 850, 350);
+await clickNode('S3');
 await clickTab('Security');
-await snap('p2-cognito-security.png');
+await page.waitForTimeout(300);
+// Encryption Type is the only select in S3 Security tab
+const encSelect = page.locator('select').first();
+await encSelect.selectOption('None');
+await page.waitForTimeout(600);
+await snap('p3-s3-no-encryption.png');
 
+// ── Test 3: SNS accessPolicy = Open → error ───────────────────
 await page.mouse.click(300, 650);
-await page.waitForTimeout(400);
-
-// ── SNS: Basic + verify no Advanced tab shown ─────────────────
-await dropNode('sns', 'SNS Topic', 850, 300);
+await page.waitForTimeout(300);
+await dropNode('sns', 'SNS Topic', 600, 500);
 await clickNode('SNS');
-await snap('p2-sns-basic.png');
-
-// ── EventBridge: Perf — enable archive to show retention field ─
-await page.mouse.click(300, 650);
-await page.waitForTimeout(400);
-await dropNode('eventbridge', 'EventBridge', 550, 550);
-await clickNode('EventBridge');
-await clickTab('Perf');
-// Enable archive
-const archiveToggle = page.locator('button[class*="rounded-full"]').first();
-await archiveToggle.click();
-await page.waitForTimeout(400);
-await snap('p2-eventbridge-perf-archive.png');
-
-// ── SQS: Security — enable DLQ to show maxReceiveCount ────────
-await page.mouse.click(300, 650);
-await page.waitForTimeout(400);
-await dropNode('sqs', 'SQS Queue', 350, 500);
-await clickNode('SQS');
 await clickTab('Security');
-await snap('p2-sqs-security-nodlq.png');
-// Toggle DLQ on
-const dlqToggle = page.locator('button[class*="rounded-full"]').nth(1);
-await dlqToggle.click();
-await page.waitForTimeout(400);
-await snap('p2-sqs-security-dlq.png');
+await page.waitForTimeout(300);
+const policySelect = page.locator('select').first();
+await policySelect.selectOption('Open');
+await page.waitForTimeout(600);
+await snap('p3-sns-open-policy.png');
+
+// ── Test 4: Cognito mfaMode = OFF (default) → warning already fires
+await page.mouse.click(300, 650);
+await page.waitForTimeout(300);
+await dropNode('cognito', 'Cognito Auth', 400, 500);
+await clickNode('Cognito');
+// MFA is OFF by default — cognito-no-mfa fires immediately
+await page.waitForTimeout(600);
+await snap('p3-cognito-mfa-off.png');
+
+// ── Test 5: DynamoDB PROVISIONED → warning ────────────────────
+await page.mouse.click(300, 650);
+await page.waitForTimeout(300);
+await dropNode('dynamodb', 'DynamoDB', 750, 500);
+await clickNode('DynamoDB');
+const billingSelect = page.locator('select').first();
+await billingSelect.selectOption('PROVISIONED');
+await page.waitForTimeout(600);
+await snap('p3-dynamodb-provisioned.png');
+
+// ── Final: deselect and show full issues panel ────────────────
+await page.mouse.click(300, 650);
+await page.waitForTimeout(500);
+await snap('p3-issues-panel.png');
 
 await browser.close();
-console.log('All screenshots done.');
+console.log('Done.');

@@ -1,3 +1,6 @@
+// 1. CRITICAL: Give Vercel up to 120 seconds to wait for the GPU (prevents initial timeouts)
+export const maxDuration = 120; 
+
 const SYSTEM_PROMPT = `/no_think
 You are a senior AWS solutions architect and infrastructure designer working inside InGen, a visual AWS architecture tool.
 
@@ -104,7 +107,15 @@ export async function POST(req) {
     return Response.json({ error: 'No messages provided.' });
   }
 
-  const capped = messages.slice(-10);
+  // 2. CRITICAL: Strip out any frontend error messages (role: 'system') before sending to vLLM
+  const cleanMessages = messages.filter(msg => msg.role !== 'system');
+
+  if (cleanMessages.length === 0) {
+    return Response.json({ error: 'No user messages provided.' });
+  }
+
+  // Use the cleaned messages array for the history
+  const capped = cleanMessages.slice(-10);
   const last = capped[capped.length - 1];
   const withGraph = [
     ...capped.slice(0, -1),
@@ -152,9 +163,11 @@ export async function POST(req) {
     }
 
     return Response.json({ type: 'chat', textResponse: content });
-  } catch {
+  } catch (error) {
+    // Improved error logging so you can see exactly why fetch fails in Vercel logs
+    console.error("Vercel Fetch Error:", error);
     return Response.json({
-      error: 'Failed to reach LLM endpoint. Check LLM_BASE_URL in .env.local.',
+      error: `Failed to reach LLM endpoint: ${error.message}`,
     });
   }
 }

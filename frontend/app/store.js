@@ -290,6 +290,18 @@ export const useStore = create((set, get) => ({
     get().scheduleAutoSave();
   },
 
+  applyPropertyUpdates: (updates) => {
+    get().takeSnapshot();
+    const updatedNodes = get().nodes.map(node => {
+      const update = updates.find(u => u.nodeId === node.id);
+      if (!update) return node;
+      return { ...node, data: { ...node.data, ...update.data } };
+    });
+    set({ nodes: updatedNodes });
+    get().runValidation();
+    get().scheduleAutoSave();
+  },
+
   runValidation: () => {
     const { nodes, edges } = get();
     set({ issues: validateArchitecture(nodes, edges) });

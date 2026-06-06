@@ -48,7 +48,7 @@ function fetchNoTimeout(url, { method = 'POST', headers = {}, body, signal } = {
 
 const BASE_SYSTEM_PROMPT = `You are a senior AWS solutions architect and infrastructure designer working inside InGen, a visual AWS architecture tool.
 
-You have two modes:
+You have three modes:
 
 MODE 1 — CHAT (default)
 Answer questions about architecture, security, costs, and best practices. Be direct and specific. Reference node labels from the current diagram when relevant. Keep responses under 150 words unless detail is requested.
@@ -129,7 +129,37 @@ DynamoDB should have pointInTimeRecovery: true
 Lambda timeout should match the use case (not default 3s)
 Add DLQ to async Lambda functions
 API Gateway → Lambda edges MUST use authType "COGNITO" or "IAM" — authType "NONE" means unauthenticated and will trigger a validation warning
-SNS topics MUST have at least one outgoing edge to a Lambda or SQS subscriber — a disconnected SNS topic is a broken architecture`;
+SNS topics MUST have at least one outgoing edge to a Lambda or SQS subscriber — a disconnected SNS topic is a broken architecture
+
+MODE 3 — PROPERTY UPDATE
+When the user asks to fix a validation error or change a specific property on an existing node, respond with ONLY this block — no text before or after it:
+
+<INGEN_UPDATE>
+{
+  "updates": [
+    {
+      "nodeId": "exact-node-id-from-graph-state",
+      "data": { "propertyName": newValue }
+    }
+  ]
+}
+</INGEN_UPDATE>
+
+Use MODE 3 for these validation fixes:
+- SQS visibility timeout too low → { "visibilityTimeout": recommendedValue }
+- S3 public access exposed → { "blockPublicAccess": true }
+- S3 no encryption → { "encryption": true }
+- Lambda default timeout → { "timeout": 30 }
+- DynamoDB no PITR → { "pointInTimeRecovery": true }
+- API Gateway no throttling → { "throttlingEnabled": true }
+- Lambda no DLQ on async path → { "hasDeadLetterQueue": true }
+
+CRITICAL RULES for MODE 3:
+- Use the EXACT nodeId from the graph state nodes array
+- NEVER add new nodes to fix a property-based error
+- NEVER use MODE 3 for structural issues (missing services, missing connections) — use MODE 2
+- Multiple nodes can be updated in one response: put all objects in the "updates" array
+- For SQS visibility timeout: find the connected Lambda timeout from graph state, multiply by 6, use that value`;
 
 const GENERATION_KEYWORDS = ['build', 'create', 'design', 'generate', 'make', 'architect', 'set up', 'deploy', 'implement'];
 const EXTENSION_KEYWORDS = ['add', 'extend', 'fix', 'update', 'include', 'integrate', 'enhance', 'improve', 'modify', 'now add', 'also add'];
@@ -189,6 +219,18 @@ function parseDiagramBlock(content) {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function parseUpdateBlock(content) {
+  const match = content.match(/<INGEN_UPDATE>([\s\S]*?)<\/INGEN_UPDATE>/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (!parsed.updates || !Array.isArray(parsed.updates)) return null;
     return parsed;
   } catch {
     return null;
@@ -301,6 +343,11 @@ export async function POST(req) {
     let content = data.choices[0].message.content;
     const thinkEnd = content.indexOf('</think>');
     if (thinkEnd !== -1) content = content.slice(thinkEnd + 8).trimStart();
+
+    const update = parseUpdateBlock(content);
+    if (update) {
+      return Response.json({ type: 'property_update', updates: update.updates });
+    }
 
     const diagram = parseDiagramBlock(content);
     if (diagram) {

@@ -47,6 +47,7 @@ export default function ChatSidebar({ onClose }) {
   const edges = useStore(state => state.edges);
   const issues = useStore(state => state.issues || []);
   const streamNodes = useStore(state => state.streamNodes);
+  const applyPropertyUpdates = useStore(state => state.applyPropertyUpdates);
   const updateWorkspaceMessages = useStore(state => state.updateWorkspaceMessages);
   const getCurrentWorkspace = useStore(state => state.getCurrentWorkspace);
 
@@ -161,6 +162,23 @@ export default function ChatSidebar({ onClose }) {
         ]);
       } else if (data.type === 'diagram_generation') {
         setPendingGeneration(data);
+      } else if (data.type === 'property_update') {
+        applyPropertyUpdates(data.updates);
+        const updatedLabels = data.updates.map(u => {
+          const node = nodes.find(n => n.id === u.nodeId);
+          const label = node?.data?.label || u.nodeId;
+          const props = Object.keys(u.data).join(', ');
+          return `${label} (${props})`;
+        }).join(', ');
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Fixed: updated ${updatedLabels}. Validation is running.`,
+            timestamp: new Date(),
+            isGenerated: true,
+          },
+        ]);
       } else {
         const content = data.textResponse || data.content || '';
         setMessages(prev => [
@@ -186,7 +204,7 @@ export default function ChatSidebar({ onClose }) {
       setLoadingText(null);
       setIsLoading(false);
     }
-  }, [messages, nodes, edges, issues, isLoading, isStreaming, thinkingMode]);
+  }, [messages, nodes, edges, issues, isLoading, isStreaming, thinkingMode, applyPropertyUpdates]);
 
   const handleConfirm = useCallback(async (replace) => {
     const gen = pendingGeneration;

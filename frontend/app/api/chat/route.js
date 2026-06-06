@@ -1,13 +1,59 @@
-// 1. CRITICAL: Give Vercel up to 120 seconds to wait for the GPU (prevents initial timeouts)
-export const maxDuration = 120; 
+export const maxDuration = 300;
 
-const SYSTEM_PROMPT = `/no_think
-You are a senior AWS solutions architect and infrastructure designer working inside InGen, a visual AWS architecture tool.
+import { request as httpsRequest } from 'node:https';
+import { request as httpRequest } from 'node:http';
+
+// Bypasses undici (Node's fetch implementation) which kills connections after
+// 300s waiting for response headers — fatal for slow reasoning models.
+function fetchNoTimeout(url, { method = 'POST', headers = {}, body, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const isHttps = parsed.protocol === 'https:';
+    const requester = isHttps ? httpsRequest : httpRequest;
+
+    const req = requester(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || (isHttps ? 443 : 80),
+        path: parsed.pathname + (parsed.search || ''),
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            json: () => Promise.resolve(JSON.parse(text)),
+          });
+        });
+        res.on('error', reject);
+      }
+    );
+
+    req.on('error', reject);
+
+    signal?.addEventListener('abort', () => {
+      req.destroy();
+      reject(Object.assign(new DOMException('The operation was aborted.', 'AbortError'), { name: 'AbortError' }));
+    }, { once: true });
+
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+const BASE_SYSTEM_PROMPT = `You are a senior AWS solutions architect and infrastructure designer working inside InGen, a visual AWS architecture tool.
 
 You have two modes:
 
 MODE 1 — CHAT (default)
 Answer questions about architecture, security, costs, and best practices. Be direct and specific. Reference node labels from the current diagram when relevant. Keep responses under 150 words unless detail is requested.
+
+CRITICAL BEHAVIOR: If the user just says hello, greets you, or types a short typo (like "hi", "hey", or "ji"), simply greet them back and ask how you can help with their diagram. Do NOT audit or analyze the architecture unless they specifically ask a question.
 
 MODE 2 — GENERATE
 When the user asks you to build, create, design, or generate an architecture — or describes an application they want to build — respond with a diagram generation block.
@@ -61,6 +107,11 @@ apiGateway: throttlingEnabled(bool), loggingEnabled(bool)
 dynamodb: pointInTimeRecovery(bool), billingMode(string)
 eventBridge, sns, cognito: no extra data needed
 
+Valid edge authType values:
+"COGNITO" — API Gateway with user authentication (Cognito User Pool)
+"IAM" — service-to-service authentication
+"NONE" — truly public endpoint with no auth (use sparingly)
+
 Layout rules for x/y coordinates:
 Start ingress nodes (apiGateway) at x:200, y:250
 Place compute (lambda) at x:500, y:250
@@ -74,7 +125,63 @@ API Gateway should have throttlingEnabled: true
 S3 should have blockPublicAccess: true, encryption: true
 DynamoDB should have pointInTimeRecovery: true
 Lambda timeout should match the use case (not default 3s)
-Add DLQ to async Lambda functions`;
+Add DLQ to async Lambda functions
+API Gateway → Lambda edges MUST use authType "COGNITO" or "IAM" — authType "NONE" means unauthenticated and will trigger a validation warning
+SNS topics MUST have at least one outgoing edge to a Lambda or SQS subscriber — a disconnected SNS topic is a broken architecture`;
+
+const GENERATION_KEYWORDS = ['build', 'create', 'design', 'generate', 'make', 'architect', 'set up', 'deploy', 'implement'];
+const EXTENSION_KEYWORDS = ['add', 'extend', 'fix', 'update', 'include', 'integrate', 'enhance', 'improve', 'modify', 'now add', 'also add'];
+
+function hasGenerationIntent(message) {
+  const lower = message.toLowerCase();
+  return GENERATION_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function hasExtensionIntent(message) {
+  const lower = message.toLowerCase();
+  return EXTENSION_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function summarizeDiagram({ nodes = [], edges = [], issues = [] } = {}) {
+  if (!nodes.length) return 'The canvas is currently empty.';
+
+  const labelById = {};
+  nodes.forEach(n => { labelById[n.id] = n.data?.label || n.data?.service || n.id; });
+
+  const nodeLines = nodes.map(n => {
+    const service = n.data?.service || 'unknown';
+    const label = n.data?.label || 'Unnamed';
+    const config = [];
+    if (service === 'lambda')     config.push(`timeout: ${n.data?.timeout ?? '?'}s, memory: ${n.data?.memorySize ?? '?'}MB, DLQ: ${n.data?.hasDeadLetterQueue ? 'yes' : 'no'}`);
+    if (service === 'apiGateway') config.push(`throttling: ${n.data?.throttlingEnabled ? 'on' : 'off'}`);
+    if (service === 'dynamodb')   config.push(`PITR: ${n.data?.pointInTimeRecovery ? 'on' : 'off'}, billing: ${n.data?.billingMode || '?'}`);
+    if (service === 's3')         config.push(`public: ${n.data?.blockPublicAccess === false ? 'OPEN (risk!)' : 'blocked'}, encryption: ${n.data?.encryption ? 'on' : 'off'}`);
+    if (service === 'sqs')        config.push(`visibilityTimeout: ${n.data?.visibilityTimeout ?? '?'}s`);
+    return `  - "${label}" [${service}]${config.length ? ` — ${config.join(', ')}` : ''}`;
+  });
+
+  const edgeLines = edges.map(e => {
+    const from = labelById[e.source] || e.source;
+    const to = labelById[e.target] || e.target;
+    const parts = [];
+    if (e.data?.authType)       parts.push(`auth: ${e.data.authType}`);
+    if (e.data?.invocationType) parts.push(e.data.invocationType);
+    return `  - "${from}" → "${to}"${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  });
+
+  const connectedIds = new Set([...edges.map(e => e.source), ...edges.map(e => e.target)]);
+  const isolated = nodes.filter(n => !connectedIds.has(n.id)).map(n => `"${n.data?.label || n.data?.service}"`);
+
+  let out = `CURRENT DIAGRAM — ${nodes.length} node${nodes.length !== 1 ? 's' : ''}, ${edges.length} edge${edges.length !== 1 ? 's' : ''}`;
+  out += `\n\nNodes:\n${nodeLines.join('\n')}`;
+  out += `\n\nConnections:\n${edgeLines.length ? edgeLines.join('\n') : '  (none)'}`;
+  if (isolated.length) out += `\n\nDisconnected nodes (no edges — likely broken): ${isolated.join(', ')}`;
+  if (issues?.length) {
+    const ilines = issues.map(i => `  - [${(i.severity || 'issue').toUpperCase()}] ${i.message}`);
+    out += `\n\nActive validation issues:\n${ilines.join('\n')}`;
+  }
+  return out;
+}
 
 function parseDiagramBlock(content) {
   const start = content.indexOf('<INGEN_DIAGRAM>');
@@ -91,7 +198,7 @@ function parseDiagramBlock(content) {
 }
 
 export async function POST(req) {
-  const { messages, graphState } = await req.json();
+  const { messages, graphState, thinkingMode = false } = await req.json();
 
   const baseUrl = process.env.LLM_BASE_URL;
   const apiKey = process.env.LLM_API_KEY;
@@ -107,37 +214,75 @@ export async function POST(req) {
     return Response.json({ error: 'No messages provided.' });
   }
 
-  // 2. CRITICAL: Strip out any frontend error messages (role: 'system') before sending to vLLM
   const cleanMessages = messages.filter(msg => msg.role !== 'system');
 
   if (cleanMessages.length === 0) {
     return Response.json({ error: 'No user messages provided.' });
   }
 
-  // Use the cleaned messages array for the history
   const capped = cleanMessages.slice(-10);
   const last = capped[capped.length - 1];
+
+  const lastContent = last.content || '';
+  const isGenerating = hasGenerationIntent(lastContent);
+  const isExtending = hasExtensionIntent(lastContent);
+  const useFullReasoning = thinkingMode || isGenerating || isExtending;
+  let systemPrompt = useFullReasoning
+    ? BASE_SYSTEM_PROMPT
+    : `/no_think\nNEVER use thinking mode. Respond immediately.\n${BASE_SYSTEM_PROMPT}`;
+
+  const existingNodes = graphState?.nodes;
+  if ((isGenerating || isExtending) && existingNodes?.length > 0) {
+    const existingList = existingNodes
+      .map(n => `- "${n.data?.label}" (type: ${n.data?.service}, id: "${n.id}")`)
+      .join('\n');
+
+    if (isExtending && !isGenerating) {
+      // Pure extension request: user wants to ADD to the existing canvas, not rebuild it
+      const exampleExistingId = existingNodes[0]?.id ?? 'existing-node-id';
+      systemPrompt += `\n\n[EXTENSION MODE — CRITICAL]\nThe user wants to ADD TO or MODIFY the existing diagram. DO NOT regenerate existing nodes.\n\nYour INGEN_DIAGRAM response must contain ONLY:\n1. NEW nodes that do not already exist on canvas\n2. Edges between new nodes\n3. Edges connecting new nodes to EXISTING nodes — use their EXACT id values\n\nExisting canvas nodes (use these ids in edge source/target):\n${existingList}\n\nExample format — to add a Cognito node connecting to an existing API Gateway:\n<INGEN_DIAGRAM>\n{\n  "description": "Added Cognito authentication to existing API Gateway",\n  "nodes": [{"id": "node_new", "type": "cognito", "label": "User Pool", "x": 200, "y": 450, "data": {}}],\n  "edges": [{"id": "e_new", "source": "node_new", "target": "${exampleExistingId}", "authType": "COGNITO", "invocationType": "Synchronous"}]\n}\n</INGEN_DIAGRAM>`;
+    } else {
+      // Generation request with existing canvas: inject context for integration
+      systemPrompt += `\n\n[EXISTING CANVAS NODES]\nThe diagram already contains these nodes. If generating complementary architecture, create edges to relevant existing nodes using their exact id values:\n${existingList}`;
+    }
+  }
+
   const withGraph = [
     ...capped.slice(0, -1),
     {
       ...last,
-      content: `${last.content}\n\nCurrent diagram:\n${JSON.stringify(graphState, null, 2)}`,
+      content: `${last.content}\n\n${summarizeDiagram(graphState)}`,
     },
   ];
 
+  const controller = new AbortController();
+  let fetchTimeout = null;
+  let didTimeout = false;
+
+  // Fast mode only: apply 2-minute safety cap. Pro mode and generation requests run indefinitely.
+  if (!useFullReasoning) {
+    fetchTimeout = setTimeout(() => { didTimeout = true; controller.abort(); }, 120000);
+  }
+
+  // Propagate client disconnect (Stop button) to the upstream LLM fetch.
+  const onClientAbort = () => controller.abort();
+  req.signal?.addEventListener('abort', onClientAbort, { once: true });
+
   try {
-    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
+    const res = await fetchNoTimeout(`${baseUrl}/v1/chat/completions`, {
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...withGraph],
+        messages: [{ role: 'system', content: systemPrompt }, ...withGraph],
         stream: false,
       }),
     });
+    clearTimeout(fetchTimeout);
+    req.signal?.removeEventListener('abort', onClientAbort);
 
     const data = await res.json();
 
@@ -164,10 +309,19 @@ export async function POST(req) {
 
     return Response.json({ type: 'chat', textResponse: content });
   } catch (error) {
-    // Improved error logging so you can see exactly why fetch fails in Vercel logs
-    console.error("Vercel Fetch Error:", error);
+    clearTimeout(fetchTimeout);
+    req.signal?.removeEventListener('abort', onClientAbort);
+    if (error.name === 'AbortError') {
+      if (didTimeout) {
+        return Response.json({ error: 'Request timed out after 2 minutes. Switch to Pro mode for questions that need more reasoning time.' });
+      }
+      // Client cancelled via Stop button — they handle the UI, nothing to send back.
+      return Response.json({ cancelled: true });
+    }
+    const causeCode = error.cause?.code || error.cause?.message || '';
+    console.error('[chat/route] fetch error:', error.message, causeCode, error.cause);
     return Response.json({
-      error: `Failed to reach LLM endpoint: ${error.message}`,
+      error: `Failed to reach LLM endpoint: ${error.message}${causeCode ? ` — ${causeCode}` : ''}`,
     });
   }
 }

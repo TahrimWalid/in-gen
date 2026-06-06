@@ -11,8 +11,8 @@ import PropertiesPanel from './PropertiesPanel';
 import NodePropertiesPanel from './NodePropertiesPanel';
 import ExportModal from './ExportModal';
 import TemplatesModal from './TemplatesModal';
-import DiagramsPanel from './DiagramsPanel';
-import { Undo2, Redo2, Code2, Trash2, Sparkles, Sun, Moon, LayoutTemplate, Network, FolderOpen, Share2 } from 'lucide-react';
+import WorkspaceTabBar from './WorkspaceTabBar';
+import { Undo2, Redo2, Code2, Trash2, Sparkles, Network, Share2, LayoutTemplate } from 'lucide-react';
 import { useTheme } from '../app/useTheme';
 import 'reactflow/dist/style.css';
 
@@ -47,20 +47,16 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
-  const [isDiagramsPanelOpen, setIsDiagramsPanelOpen] = useState(false);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [diagramNameInput, setDiagramNameInput] = useState('');
   const [shareStatus, setShareStatus] = useState('idle');
   const [isExportingPng, setIsExportingPng] = useState(false);
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme } = useTheme();
 
   const {
     nodes, edges, onNodesChange, onEdgesChange, onConnect,
     addNode, takeSnapshot, undo, redo, past, future,
     setSelectedElement, clearCanvas,
     pendingFitView, clearPendingFitView,
-    diagramName, setDiagramName, saveStatus, initDiagrams,
-    activeDiagramId, renameDiagram, loadFromSharedUrl,
+    loadWorkspaces, loadFromSharedUrl,
   } = useStore();
 
   const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
@@ -69,16 +65,11 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
   useEffect(() => {
     const handleKeyDown = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
-        if (event.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
+        event.shiftKey ? redo() : undo();
       } else if ((event.ctrlKey || event.metaKey) && event.key === 'y') {
         redo();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
@@ -91,9 +82,9 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
           loadFromSharedUrl(nodes, edges);
           history.replaceState(null, '', window.location.pathname);
         })
-        .catch(() => initDiagrams());
+        .catch(() => loadWorkspaces());
     } else {
-      initDiagrams();
+      loadWorkspaces();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -105,9 +96,7 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
     }
   }, [pendingFitView, reactFlowInstance, clearPendingFitView]);
 
-  const onNodeDragStart = useCallback(() => {
-    takeSnapshot();
-  }, [takeSnapshot]);
+  const onNodeDragStart = useCallback(() => { takeSnapshot(); }, [takeSnapshot]);
 
   const onSelectionChange = useCallback(({ nodes, edges }) => {
     if (nodes.length > 0) {
@@ -115,7 +104,7 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
     } else if (edges.length > 0) {
       setSelectedElement({ ...edges[0], elementType: 'edge' });
     } else {
-      setSelectedElement(null); 
+      setSelectedElement(null);
     }
   }, [setSelectedElement]);
 
@@ -124,39 +113,18 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback(
-    (event) => {
-      event.preventDefault();
-      const service = event.dataTransfer.getData('application/reactflow/service');
-      const label = event.dataTransfer.getData('application/reactflow/label');
-      if (!service) return;
+  const onDrop = useCallback((event) => {
+    event.preventDefault();
+    const service = event.dataTransfer.getData('application/reactflow/service');
+    const label = event.dataTransfer.getData('application/reactflow/label');
+    if (!service) return;
 
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      const newNode = {
-        id: getId(),
-        type: 'awsNode',
-        position,
-        data: { service, label },
-      };
-
-      addNode(newNode);
-    },
-    [reactFlowInstance, addNode]
-  );
-
-  const handleNameSave = () => {
-    setIsEditingName(false);
-    const trimmed = diagramNameInput.trim() || 'Untitled Architecture';
-    if (activeDiagramId) {
-      renameDiagram(activeDiagramId, trimmed);
-    } else {
-      setDiagramName(trimmed);
-    }
-  };
+    const position = reactFlowInstance.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
+    });
+    addNode({ id: getId(), type: 'awsNode', position, data: { service, label } });
+  }, [reactFlowInstance, addNode]);
 
   const handleShare = useCallback(async () => {
     if (nodes.length === 0) return;
@@ -207,67 +175,24 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
   }, [nodes, theme]);
 
   return (
-    <div className="w-full h-full flex-1 relative" style={{ background: 'var(--canvas-bg)' }} ref={reactFlowWrapper}>
-      
-      {/* Diagram name + save indicator — top left */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
-        {isEditingName ? (
-          <input
-            type="text"
-            value={diagramNameInput}
-            onChange={(e) => setDiagramNameInput(e.target.value)}
-            onBlur={handleNameSave}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleNameSave(); if (e.key === 'Escape') setIsEditingName(false); }}
-            autoFocus
-            className="bg-transparent border-b border-purple-500 text-primary font-semibold text-sm focus:outline-none min-w-[180px]"
-          />
-        ) : (
-          <button
-            onClick={() => { setDiagramNameInput(diagramName); setIsEditingName(true); }}
-            className="text-primary font-semibold text-sm hover:text-purple-500 transition-colors max-w-[220px] truncate text-left"
-            title="Click to rename"
-          >
-            {diagramName}
-          </button>
-        )}
-        {saveStatus === 'saving' && <span className="text-xs text-muted">Saving...</span>}
-        {saveStatus === 'saved' && <span className="text-xs text-emerald-500">Saved</span>}
-      </div>
+    <div className="w-full h-full flex flex-col" style={{ background: 'var(--canvas-bg)' }}>
 
-      {/* Top Right Action Buttons */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-        <button
-          onClick={toggleTheme}
-          className="h-9 w-9 bg-surface border border-border text-secondary rounded-md shadow-sm hover:bg-surface-hover transition-all flex items-center justify-center"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
+      {/* Top header bar */}
+      <div className="shrink-0 h-12 bg-surface border-b border-border px-3 flex items-center gap-2 z-20">
+        <WorkspaceTabBar />
 
-        <div className="w-px h-6 bg-border" />
+        <div className="flex-1 min-w-0" />
 
-        <button
-          onClick={() => setIsDiagramsPanelOpen(o => !o)}
-          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 ${
-            isDiagramsPanelOpen
-              ? 'bg-purple-600 border-purple-600 text-white hover:bg-purple-500'
-              : 'bg-surface border-border text-secondary hover:bg-surface-hover'
-          }`}
-          title="My saved diagrams"
-        >
-          <FolderOpen className="w-4 h-4" />
-          My Diagrams
-        </button>
-
+        {/* Right-side actions */}
         <button
           onClick={handleShare}
           disabled={nodes.length === 0}
           title={
             shareStatus === 'toolarge'
-              ? 'Diagram too large to share via URL. Save it and share the diagram name instead.'
+              ? 'Diagram too large to share via URL.'
               : 'Copy shareable link to clipboard'
           }
-          className={`h-9 border px-3 rounded-md shadow-sm text-sm font-bold transition-all flex items-center gap-2 disabled:opacity-40 ${
+          className={`h-8 border px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-40 shrink-0 ${
             shareStatus === 'copied'
               ? 'bg-emerald-600 border-emerald-600 text-white'
               : shareStatus === 'toolarge'
@@ -275,114 +200,117 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
               : 'bg-surface border-border text-secondary hover:bg-surface-hover'
           }`}
         >
-          <Share2 className="w-4 h-4" />
-          {shareStatus === 'copied' ? 'Link copied!' : shareStatus === 'toolarge' ? 'Too large' : 'Share'}
+          <Share2 className="w-3.5 h-3.5" />
+          {shareStatus === 'copied' ? 'Copied!' : shareStatus === 'toolarge' ? 'Too large' : 'Share'}
         </button>
 
         <button
           onClick={() => setIsTemplatesOpen(true)}
-          className="h-9 bg-surface border border-border text-secondary px-3 rounded-md shadow-sm hover:bg-surface-hover text-sm font-bold transition-all flex items-center gap-2"
+          className="h-8 bg-surface border border-border text-secondary px-3 rounded-md hover:bg-surface-hover text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
           title="Browse architecture templates"
         >
-          <LayoutTemplate className="w-4 h-4" />
+          <LayoutTemplate className="w-3.5 h-3.5" />
           Templates
         </button>
 
         <button
           onClick={clearCanvas}
-          className="h-9 border border-red-500 text-red-600 px-3 rounded-md shadow-sm hover:bg-red-500/10 text-sm font-bold transition-all flex items-center gap-2"
+          className="h-8 border border-red-500 text-red-600 px-3 rounded-md hover:bg-red-500/10 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
           title="Clear entire canvas"
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="w-3.5 h-3.5" />
           Clear
         </button>
 
         <button
           onClick={() => setIsExportOpen(true)}
-          className="h-9 bg-purple-600 text-white px-4 rounded-md shadow-md hover:bg-purple-500 text-sm font-bold transition-all flex items-center gap-2"
+          className="h-8 bg-purple-600 text-white px-3 rounded-md shadow-md hover:bg-purple-500 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
         >
-          <Code2 className="w-4 h-4" />
+          <Code2 className="w-3.5 h-3.5" />
           Export Terraform
         </button>
       </div>
 
-      {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
-          <div className="flex flex-col items-center gap-4 text-center pointer-events-auto">
-            <Network className="w-16 h-16 text-muted opacity-30" />
-            <div>
-              <h2 className="text-primary font-bold text-xl mb-2">Start building your architecture</h2>
-              <p className="text-muted text-sm">Drag AWS components from the left sidebar, or start from a template.</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsTemplatesOpen(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-md font-semibold text-sm hover:bg-purple-500 transition-colors"
-              >
-                Browse Templates
-              </button>
-              <span className="text-muted text-sm">← Drop a component to begin</span>
+      {/* Canvas body */}
+      <div className="flex-1 relative min-h-0" ref={reactFlowWrapper}>
+
+        {nodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
+            <div className="flex flex-col items-center gap-4 text-center pointer-events-auto">
+              <Network className="w-16 h-16 text-muted opacity-30" />
+              <div>
+                <h2 className="text-primary font-bold text-xl mb-2">Start building your architecture</h2>
+                <p className="text-muted text-sm">Drag AWS components from the left sidebar, or start from a template.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsTemplatesOpen(true)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md font-semibold text-sm hover:bg-purple-500 transition-colors"
+                >
+                  Browse Templates
+                </button>
+                <span className="text-muted text-sm">← Drop a component to begin</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Persistent AI Architect tab on canvas right edge */}
-      <button
-        onClick={onToggleChat}
-        title="AI Architect (Ctrl+Shift+A)"
-        className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1.5 py-4 px-1.5 rounded-l-lg shadow-lg text-white transition-colors ${
-          isChatOpen ? 'bg-purple-500' : 'bg-purple-600 hover:bg-purple-500'
-        }`}
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-        <span
-          className="text-xs font-bold tracking-wider"
-          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        {/* Persistent AI Architect tab on canvas right edge */}
+        <button
+          onClick={onToggleChat}
+          title="AI Architect (Ctrl+Shift+A)"
+          className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1.5 py-4 px-1.5 rounded-l-lg shadow-lg text-white transition-colors ${
+            isChatOpen ? 'bg-purple-500' : 'bg-purple-600 hover:bg-purple-500'
+          }`}
         >
-          AI Architect
-        </span>
-      </button>
+          <Sparkles className="w-3.5 h-3.5" />
+          <span
+            className="text-xs font-bold tracking-wider"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            AI Architect
+          </span>
+        </button>
 
-      <IssuesPanel />
-      <PropertiesPanel />
-      <NodePropertiesPanel />
-      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} onExportPng={handleExportPng} isExportingPng={isExportingPng} />
-      <TemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} />
-      <DiagramsPanel isOpen={isDiagramsPanelOpen} onClose={() => setIsDiagramsPanelOpen(false)} />
+        <IssuesPanel />
+        <PropertiesPanel />
+        <NodePropertiesPanel />
+        <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} onExportPng={handleExportPng} isExportingPng={isExportingPng} />
+        <TemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} />
 
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onInit={setReactFlowInstance}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeDragStart={onNodeDragStart} 
-        onSelectionChange={onSelectionChange} 
-        deleteKeyCode={['Backspace', 'Delete']}
-        fitView
-      >
-        <Controls>
-          <ControlButton onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
-            <Undo2 className="w-4 h-4 text-secondary" />
-          </ControlButton>
-          <ControlButton onClick={redo} disabled={future.length === 0} title="Redo (Ctrl+Y)">
-            <Redo2 className="w-4 h-4 text-secondary" />
-          </ControlButton>
-        </Controls>
-        <MiniMap />
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={16}
-          size={1}
-          color={theme === 'dark' ? '#374151' : '#cbd5e1'}
-        />
-      </ReactFlow>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onInit={setReactFlowInstance}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeDragStart={onNodeDragStart}
+          onSelectionChange={onSelectionChange}
+          deleteKeyCode={['Backspace', 'Delete']}
+          fitView
+        >
+          <Controls>
+            <ControlButton onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
+              <Undo2 className="w-4 h-4 text-secondary" />
+            </ControlButton>
+            <ControlButton onClick={redo} disabled={future.length === 0} title="Redo (Ctrl+Y)">
+              <Redo2 className="w-4 h-4 text-secondary" />
+            </ControlButton>
+          </Controls>
+          <MiniMap />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={16}
+            size={1}
+            color={theme === 'dark' ? '#374151' : '#cbd5e1'}
+          />
+        </ReactFlow>
+      </div>
     </div>
   );
 }

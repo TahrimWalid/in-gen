@@ -19,6 +19,7 @@ const serviceConfig = {
 
 export default function AwsNode({ id, data, selected }) {
   const allIssues = useStore(state => state.issues);
+  const isNew = useStore(state => !!state.streamingIds?.[id]);
   const nodeIssues = allIssues.filter(issue => issue.nodeId === id);
 
   const hasErrors   = nodeIssues.some(i => i.severity === 'error');
@@ -30,11 +31,14 @@ export default function AwsNode({ id, data, selected }) {
   const Icon = config.icon;
 
   return (
-    <div className={`relative flex items-center min-w-[180px] bg-surface border-2 rounded-lg transition-all duration-200 ${
-      selected
-        ? 'border-blue-500 shadow-md ring-4 ring-blue-50'
-        : `${config.border} shadow-sm hover:shadow-md`
-    }`}>
+    <div
+      className={`relative flex items-center min-w-[180px] bg-surface border-2 rounded-lg transition-all duration-200 ${
+        selected
+          ? 'border-blue-500 shadow-md ring-4 ring-blue-50'
+          : `${config.border} shadow-sm hover:shadow-md`
+      }`}
+      style={isNew ? { animation: 'nodeAppear 0.2s ease-out both' } : undefined}
+    >
 
       {nodeIssues.length > 0 && (
         <div className="absolute -top-2.5 -right-2.5 z-10">

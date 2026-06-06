@@ -32,7 +32,7 @@ export const rules = [
     id: 'unauthenticated-api',
     name: 'Unauthenticated Public Endpoint',
     severity: 'warning',
-    message: 'API Gateway is routing to compute without an Authorizer. If this is not a public API, change the auth type to Cognito or Custom IAM.',
+    message: 'API Gateway is routing to compute without an Authorizer. To fix: click the edge between this gateway and its Lambda, then change Auth Type to COGNITO or IAM in the Edge Properties panel.',
     evaluate: (node, nodes, edges) => {
       if (node.data.service !== 'apiGateway') return null;
       

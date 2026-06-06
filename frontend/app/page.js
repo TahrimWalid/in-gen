@@ -27,30 +27,30 @@ function readLocalInt(key, fallback) {
 export default function Home() {
   const leftPanelRef = useRef(null);
   const rightPanelRef = useRef(null);
-  const lastLeftPixels = useRef(DEFAULT_LEFT_WIDTH);
-  const lastRightPixels = useRef(DEFAULT_RIGHT_WIDTH);
 
-  const [isLeftCollapsed, setIsLeftCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
-  });
-
+  // Consistent defaults for SSR/hydration — localStorage applied after mount in useEffect
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Compute the left panel's starting pixel size from localStorage
-  const [initialLeftSize] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_LEFT_WIDTH;
+  // After hydration, restore saved panel sizes via imperative API (avoids SSR mismatch)
+  useEffect(() => {
+    const panel = leftPanelRef.current;
+    if (!panel) return;
     const collapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
-    if (collapsed) return LEFT_COLLAPSED_SIZE;
-    return readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
-  });
+    if (collapsed) {
+      panel.collapse();
+    } else {
+      const saved = readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
+      if (saved !== DEFAULT_LEFT_WIDTH) panel.resize(saved);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleLeftSidebar = useCallback(() => {
     const panel = leftPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) {
-      const width = readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
-      panel.resize(width);
+      panel.resize(readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH));
     } else {
       panel.collapse();
     }
@@ -60,8 +60,7 @@ export default function Home() {
     const panel = rightPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) {
-      const width = readLocalInt(RIGHT_WIDTH_KEY, DEFAULT_RIGHT_WIDTH);
-      panel.resize(width);
+      panel.resize(readLocalInt(RIGHT_WIDTH_KEY, DEFAULT_RIGHT_WIDTH));
     } else {
       panel.collapse();
     }
@@ -87,20 +86,14 @@ export default function Home() {
     const collapsed = px <= LEFT_COLLAPSED_SIZE;
     setIsLeftCollapsed(collapsed);
     localStorage.setItem(LEFT_COLLAPSED_KEY, String(collapsed));
-    if (!collapsed) {
-      lastLeftPixels.current = px;
-      localStorage.setItem(LEFT_WIDTH_KEY, String(Math.round(px)));
-    }
+    if (!collapsed) localStorage.setItem(LEFT_WIDTH_KEY, String(Math.round(px)));
   }, []);
 
   const handleRightResize = useCallback((size) => {
     const px = size.inPixels;
     const open = px > 0;
     setIsChatOpen(open);
-    if (open) {
-      lastRightPixels.current = px;
-      localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(px)));
-    }
+    if (open) localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(px)));
   }, []);
 
   return (
@@ -109,7 +102,7 @@ export default function Home() {
         <Panel
           id="left-sidebar"
           panelRef={leftPanelRef}
-          defaultSize={initialLeftSize}
+          defaultSize={DEFAULT_LEFT_WIDTH}
           minSize={200}
           maxSize={400}
           collapsible

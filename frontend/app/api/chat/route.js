@@ -132,7 +132,20 @@ API Gateway → Lambda edges MUST use authType "COGNITO" or "IAM" — authType "
 SNS topics MUST have at least one outgoing edge to a Lambda or SQS subscriber — a disconnected SNS topic is a broken architecture
 
 MODE 3 — PROPERTY UPDATE
-When the user asks to fix a validation error or change a specific property on an existing node, respond with ONLY this block — no text before or after it:
+Only activate MODE 3 when the user is explicitly requesting an action — not when they are asking a question.
+
+USE MODE 3 when user says things like:
+"fix this", "fix the issue", "fix the error", "fix the S3 issue"
+"correct this", "resolve this", "apply the fix"
+"update the property", "set blockPublicAccess to true", "change the timeout to 30"
+
+DO NOT use MODE 3 when user says things like:
+"what's wrong", "what's the issue", "what are the problems"
+"explain", "why", "what does this mean"
+"how do I fix", "what should I do", "what's the risk"
+These questions want MODE 1 explanation, not MODE 3 action.
+
+When MODE 3 is triggered, respond with ONLY this block — no text before or after it:
 
 <INGEN_UPDATE>
 {

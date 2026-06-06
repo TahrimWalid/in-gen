@@ -48,6 +48,7 @@ export default function ChatSidebar({ onClose }) {
   const issues = useStore(state => state.issues || []);
   const streamNodes = useStore(state => state.streamNodes);
   const applyPropertyUpdates = useStore(state => state.applyPropertyUpdates);
+  const setSourceHcl = useStore(state => state.setSourceHcl);
   const updateWorkspaceMessages = useStore(state => state.updateWorkspaceMessages);
   const getCurrentWorkspace = useStore(state => state.getCurrentWorkspace);
 
@@ -160,6 +161,40 @@ export default function ChatSidebar({ onClose }) {
           ...prev,
           { role: 'system', content: data.error, timestamp: new Date(), isError: true },
         ]);
+      } else if (data.type === 'terraform_generation') {
+        let parseResult;
+        try {
+          const parseRes = await fetch('/api/parse-hcl', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hcl: data.hcl }),
+          });
+          parseResult = await parseRes.json();
+        } catch {
+          setMessages(prev => [
+            ...prev,
+            { role: 'system', content: 'Failed to contact parse server.', timestamp: new Date(), isError: true },
+          ]);
+          return;
+        }
+        const { nodes: parsedNodes, edges: parsedEdges, errors: parseErrors } = parseResult;
+        if (parseErrors?.length > 0 && (!parsedNodes || parsedNodes.length === 0)) {
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: 'Failed to parse generated Terraform. The model may have produced invalid HCL. Try again or switch to Pro mode for better output.',
+              timestamp: new Date(),
+            },
+          ]);
+        } else {
+          setPendingGeneration({
+            nodes: parsedNodes,
+            edges: parsedEdges,
+            description: data.description,
+            hcl: data.hcl,
+          });
+        }
       } else if (data.type === 'diagram_generation') {
         setPendingGeneration(data);
       } else if (data.type === 'property_update') {
@@ -213,20 +248,24 @@ export default function ChatSidebar({ onClose }) {
 
     try {
       await streamNodes(gen.nodes, gen.edges, replace, gen.description);
+      if (gen.hcl) setSourceHcl(gen.hcl);
     } finally {
       setIsStreaming(false);
     }
 
+    const nodeCount = gen.nodes?.length || 0;
     setMessages(prev => [
       ...prev,
       {
         role: 'assistant',
-        content: `Generated: ${gen.description}. ${gen.nodes.length} nodes placed on canvas. Validation is running.`,
+        content: gen.hcl
+          ? `Generated ${gen.description}. ${nodeCount} resources defined. Export will return the source HCL directly.`
+          : `Generated: ${gen.description}. ${nodeCount} nodes placed on canvas. Validation is running.`,
         timestamp: new Date(),
         isGenerated: true,
       },
     ]);
-  }, [pendingGeneration, streamNodes]);
+  }, [pendingGeneration, streamNodes, setSourceHcl]);
 
   const handleCancel = useCallback(() => {
     const gen = pendingGeneration;

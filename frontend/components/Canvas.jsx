@@ -11,8 +11,10 @@ import PropertiesPanel from './PropertiesPanel';
 import NodePropertiesPanel from './NodePropertiesPanel';
 import ExportModal from './ExportModal';
 import TemplatesModal from './TemplatesModal';
+import ImportTerraformModal from './ImportTerraformModal';
+import DiagramConfirmModal from './DiagramConfirmModal';
 import WorkspaceTabBar from './WorkspaceTabBar';
-import { Undo2, Redo2, Code2, Trash2, Sparkles, Network, Share2, LayoutTemplate } from 'lucide-react';
+import { Undo2, Redo2, Code2, Trash2, Sparkles, Network, Share2, LayoutTemplate, FolderInput } from 'lucide-react';
 import { useTheme } from '../app/useTheme';
 import 'reactflow/dist/style.css';
 
@@ -47,6 +49,8 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [pendingImport, setPendingImport] = useState(null);
   const [shareStatus, setShareStatus] = useState('idle');
   const [isExportingPng, setIsExportingPng] = useState(false);
   const { theme } = useTheme();
@@ -57,6 +61,7 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
     setSelectedElement, clearCanvas,
     pendingFitView, clearPendingFitView,
     loadWorkspaces, loadFromSharedUrl,
+    streamNodes, setSourceHcl,
   } = useStore();
 
   const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
@@ -144,6 +149,24 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
     }
   }, [nodes, edges]);
 
+  const handleImportParsed = useCallback(({ nodes: parsedNodes, edges: parsedEdges, hcl }) => {
+    const nodeCount = parsedNodes?.length || 0;
+    const edgeCount = parsedEdges?.length || 0;
+    setPendingImport({
+      nodes: parsedNodes,
+      edges: parsedEdges,
+      hcl,
+      description: `Found ${nodeCount} resource${nodeCount !== 1 ? 's' : ''} and ${edgeCount} connection${edgeCount !== 1 ? 's' : ''}.`,
+    });
+  }, []);
+
+  const handleImportConfirm = useCallback(async (replace) => {
+    const imp = pendingImport;
+    setPendingImport(null);
+    await streamNodes(imp.nodes, imp.edges, replace, imp.description);
+    if (imp.hcl) setSourceHcl(imp.hcl);
+  }, [pendingImport, streamNodes, setSourceHcl]);
+
   const handleExportPng = useCallback(async () => {
     if (nodes.length === 0) return;
     setIsExportingPng(true);
@@ -202,6 +225,15 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
         >
           <Share2 className="w-3.5 h-3.5" />
           {shareStatus === 'copied' ? 'Copied!' : shareStatus === 'toolarge' ? 'Too large' : 'Share'}
+        </button>
+
+        <button
+          onClick={() => setIsImportOpen(true)}
+          className="h-8 bg-surface border border-border text-secondary px-3 rounded-md hover:bg-surface-hover text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
+          title="Import existing Terraform (.tf file)"
+        >
+          <FolderInput className="w-3.5 h-3.5" />
+          Import
         </button>
 
         <button
@@ -277,6 +309,14 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
         <NodePropertiesPanel />
         <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} onExportPng={handleExportPng} isExportingPng={isExportingPng} />
         <TemplatesModal isOpen={isTemplatesOpen} onClose={() => setIsTemplatesOpen(false)} />
+        <ImportTerraformModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onParsed={handleImportParsed} />
+        {pendingImport && (
+          <DiagramConfirmModal
+            generation={pendingImport}
+            onConfirm={handleImportConfirm}
+            onCancel={() => setPendingImport(null)}
+          />
+        )}
 
         <ReactFlow
           nodes={nodes}

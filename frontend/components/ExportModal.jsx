@@ -7,16 +7,23 @@ import { X, Copy, Check, ImageDown } from 'lucide-react';
 
 export default function ExportModal({ isOpen, onClose, onExportPng, isExportingPng }) {
   const { nodes, edges } = useStore();
+  const sourceHcl = useStore(state => state.sourceHcl);
+  const clearSourceHcl = useStore(state => state.clearSourceHcl);
   const [code, setCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState('hcl');
 
   useEffect(() => {
     if (isOpen) {
-      setCode(compileToTerraform(nodes, edges));
+      setCode(sourceHcl || compileToTerraform(nodes, edges));
       setCopied(false);
     }
-  }, [isOpen, nodes, edges]);
+  }, [isOpen, nodes, edges, sourceHcl]);
+
+  const handleRecompile = () => {
+    clearSourceHcl();
+    setCode(compileToTerraform(nodes, edges));
+  };
 
   if (!isOpen) return null;
 
@@ -62,17 +69,32 @@ export default function ExportModal({ isOpen, onClose, onExportPng, isExportingP
         </div>
 
         {activeTab === 'hcl' ? (
-          <div className="relative flex-1 bg-[#1e1e1e] overflow-auto p-6">
-            <button
-              onClick={handleCopy}
-              className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Copied!' : 'Copy Code'}
-            </button>
-            <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
-              <code>{code}</code>
-            </pre>
+          <div className="relative flex-1 bg-[#1e1e1e] overflow-auto flex flex-col">
+            {sourceHcl && (
+              <div className="shrink-0 flex items-center justify-between gap-4 bg-slate-800 border-b border-slate-600 px-5 py-3">
+                <p className="text-slate-300 text-xs">
+                  This diagram was generated from Terraform. Showing original source HCL.
+                </p>
+                <button
+                  onClick={handleRecompile}
+                  className="text-xs text-purple-400 hover:text-purple-300 font-semibold whitespace-nowrap shrink-0"
+                >
+                  Recompile from current diagram
+                </button>
+              </div>
+            )}
+            <div className="relative flex-1 p-6">
+              <button
+                onClick={handleCopy}
+                className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied!' : 'Copy Code'}
+              </button>
+              <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
+                <code>{code}</code>
+              </pre>
+            </div>
           </div>
         ) : (
           <div className="flex-1 bg-[#1e1e1e] flex flex-col items-center justify-center gap-4 p-8">

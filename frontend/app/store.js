@@ -1,93 +1,7 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges, addEdge } from 'reactflow';
 import { validateArchitecture } from '../lib/ValidationEngine';
-
-const SERVICE_DEFAULTS = {
-  lambda: {
-    timeout: 30,
-    memorySize: 128,
-    hasDeadLetterQueue: false,
-    runtime: 'nodejs20.x',
-    architecture: 'x86_64',
-    reservedConcurrency: -1,
-    vpcEnabled: false,
-    environmentVariables: [],
-  },
-  sqs: {
-    visibilityTimeout: 30,
-    isFifo: false,
-    messageRetentionSeconds: 345600,
-    deliveryDelaySeconds: 0,
-    maxMessageSize: 262144,
-    sqsEncryption: false,
-    dlqEnabled: false,
-    maxReceiveCount: 3,
-  },
-  s3: {
-    blockPublicAccess: true,
-    versioning: false,
-    encryption: true,
-    staticWebsiteHosting: false,
-    lifecycleEnabled: false,
-    replicationEnabled: false,
-    encryptionType: 'SSE-S3',
-    objectLock: false,
-    accessLogging: false,
-  },
-  apiGateway: {
-    throttlingEnabled: true,
-    loggingEnabled: false,
-    apiType: 'REST',
-    stageName: 'prod',
-    rateLimit: 0,
-    burstLimit: 0,
-    cacheEnabled: false,
-    cacheTtl: 300,
-    wafEnabled: false,
-    corsEnabled: false,
-    corsOrigin: '*',
-  },
-  dynamodb: {
-    pointInTimeRecovery: true,
-    billingMode: 'PAY_PER_REQUEST',
-    readCapacity: 5,
-    writeCapacity: 5,
-    ttlEnabled: false,
-    encryption: true,
-    streamsEnabled: false,
-    streamViewType: 'NEW_AND_OLD_IMAGES',
-    globalTable: false,
-  },
-  sns: {
-    topicType: 'Standard',
-    deliveryRetryEnabled: true,
-    snsEncryption: false,
-    accessPolicy: 'Restricted',
-    filterPolicyEnabled: false,
-  },
-  eventbridge: {
-    isCustomBus: false,
-    archiveEnabled: false,
-    archiveRetentionDays: 7,
-    schemaDiscovery: false,
-  },
-  cognito: {
-    mfaMode: 'OFF',
-    accountRecovery: 'PHONE_WITHOUT_MFA',
-    accessTokenValidityHours: 1,
-    refreshTokenValidityDays: 30,
-    advancedSecurity: false,
-    passwordMinLength: 8,
-    passwordRequireUppercase: true,
-    passwordRequireLowercase: true,
-    passwordRequireNumbers: true,
-    passwordRequireSymbols: false,
-  },
-};
-
-function getServiceDefaults(serviceType) {
-  return SERVICE_DEFAULTS[serviceType] || {};
-}
+import { getServiceDefaults } from '../lib/serviceDefaults';
 
 const SAFETY_OVERRIDES = {
   s3:         { blockPublicAccess: true, encryption: true, versioning: false },
@@ -95,6 +9,26 @@ const SAFETY_OVERRIDES = {
   dynamodb:   { pointInTimeRecovery: true },
   lambda:     { hasDeadLetterQueue: false },
 };
+
+const FIELD_ALIASES = {
+  mfaEnabled: null,               // invalid field — drop it
+  advancedSecurityEnabled: null,  // invalid field — drop it
+  mfa: 'mfaMode',                 // normalize if AI sends this
+  advancedSecurityMode: 'advancedSecurity',
+};
+
+function normalizeUpdateData(data) {
+  const result = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (key in FIELD_ALIASES) {
+      const mapped = FIELD_ALIASES[key];
+      if (mapped !== null) result[mapped] = val;
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
+}
 
 function normalizeServiceType(type) {
   if (type === 'eventBridge') return 'eventbridge';
@@ -118,6 +52,7 @@ function makeWorkspace(name = 'Untitled Architecture') {
     nodes: [],
     edges: [],
     messages: [],
+    sourceHcl: null,
   };
 }
 
@@ -141,6 +76,7 @@ export const useStore = create((set, get) => ({
   selectedElement: null,
   pendingFitView: false,
   streamingIds: {},
+  sourceHcl: null,
 
   // Workspace state
   workspaces: [],
@@ -176,6 +112,7 @@ export const useStore = create((set, get) => ({
         activeWorkspaceId: active.id,
         nodes: sanitizeNodePositions(active.nodes || []),
         edges: active.edges || [],
+        sourceHcl: active.sourceHcl || null,
       });
       persistActiveId(active.id);
       get().runValidation();
@@ -184,13 +121,13 @@ export const useStore = create((set, get) => ({
   },
 
   switchWorkspace: (id) => {
-    const { workspaces, activeWorkspaceId, nodes, edges } = get();
+    const { workspaces, activeWorkspaceId, nodes, edges, sourceHcl } = get();
     if (id === activeWorkspaceId) return;
 
     const now = new Date().toISOString();
     // Flush current canvas state into current workspace before switching
     const flushed = workspaces.map(w =>
-      w.id === activeWorkspaceId ? { ...w, nodes, edges, updatedAt: now } : w
+      w.id === activeWorkspaceId ? { ...w, nodes, edges, sourceHcl, updatedAt: now } : w
     );
     const target = flushed.find(w => w.id === id);
     if (!target) return;
@@ -201,6 +138,7 @@ export const useStore = create((set, get) => ({
       activeWorkspaceId: id,
       nodes: sanitizeNodePositions(target.nodes || []),
       edges: target.edges || [],
+      sourceHcl: target.sourceHcl || null,
       selectedElement: null,
       pendingFitView: true,
       saveStatus: 'idle',
@@ -266,6 +204,7 @@ export const useStore = create((set, get) => ({
         activeWorkspaceId: next.id,
         nodes: sanitizeNodePositions(next.nodes || []),
         edges: next.edges || [],
+        sourceHcl: next.sourceHcl || null,
         issues: [],
         selectedElement: null,
         pendingFitView: true,
@@ -306,10 +245,10 @@ export const useStore = create((set, get) => ({
     clearTimeout(autoSaveTimer);
     set({ saveStatus: 'saving' });
     autoSaveTimer = setTimeout(() => {
-      const { workspaces, activeWorkspaceId, nodes, edges } = get();
+      const { workspaces, activeWorkspaceId, nodes, edges, sourceHcl } = get();
       const now = new Date().toISOString();
       const updated = workspaces.map(w =>
-        w.id === activeWorkspaceId ? { ...w, nodes, edges, updatedAt: now } : w
+        w.id === activeWorkspaceId ? { ...w, nodes, edges, sourceHcl, updatedAt: now } : w
       );
       set({ workspaces: updated, saveStatus: 'saved' });
       persistWorkspaces(updated);
@@ -345,13 +284,26 @@ export const useStore = create((set, get) => ({
     clearTimeout(autoSaveTimer);
     set({ saveStatus: 'idle' });
     get().takeSnapshot();
-    set({ nodes: [], edges: [], issues: [], selectedElement: null });
+    set({ nodes: [], edges: [], issues: [], selectedElement: null, sourceHcl: null });
+    get().scheduleAutoSave();
+  },
+
+  setSourceHcl: (hcl) => {
+    set({ sourceHcl: hcl });
+    get().scheduleAutoSave();
+  },
+
+  clearSourceHcl: () => {
+    set({ sourceHcl: null });
     get().scheduleAutoSave();
   },
 
   updateNodeData: (nodeId, newData) => {
     get().takeSnapshot();
-    set({ nodes: get().nodes.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node) });
+    set({
+      nodes: get().nodes.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node),
+      sourceHcl: null,
+    });
     get().runValidation();
     set({ selectedElement: { ...get().nodes.find(n => n.id === nodeId), elementType: 'node' } });
     get().scheduleAutoSave();
@@ -370,7 +322,7 @@ export const useStore = create((set, get) => ({
     const updatedNodes = get().nodes.map(node => {
       const update = updates.find(u => u.nodeId === node.id);
       if (!update) return node;
-      return { ...node, data: { ...node.data, ...update.data } };
+      return { ...node, data: { ...node.data, ...normalizeUpdateData(update.data) } };
     });
     set({ nodes: updatedNodes });
     get().runValidation();
@@ -438,7 +390,7 @@ export const useStore = create((set, get) => ({
       ...node,
       data: { ...getServiceDefaults(node.data.service), ...node.data },
     };
-    set({ nodes: [...get().nodes, enriched] });
+    set({ nodes: [...get().nodes, enriched], sourceHcl: null });
     get().runValidation();
     get().scheduleAutoSave();
   },

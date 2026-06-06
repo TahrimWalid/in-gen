@@ -19,6 +19,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@cdktf/hcl2json": "^0.21.0",
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",

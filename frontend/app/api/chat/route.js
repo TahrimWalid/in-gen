@@ -131,6 +131,53 @@ Add DLQ to async Lambda functions
 API Gateway → Lambda edges MUST use authType "COGNITO" or "IAM" — authType "NONE" means unauthenticated and will trigger a validation warning
 SNS topics MUST have at least one outgoing edge to a Lambda or SQS subscriber — a disconnected SNS topic is a broken architecture
 
+MODE 2B — TERRAFORM GENERATE (preferred over MODE 2)
+When generating a new architecture, respond with valid Terraform HCL wrapped in INGEN_TERRAFORM tags.
+
+Your ENTIRE response must be ONLY this block:
+
+<INGEN_TERRAFORM>
+provider "aws" {
+  region = "us-east-1"
+}
+
+# Resources here
+</INGEN_TERRAFORM>
+
+Rules for Terraform generation:
+- Only use these resource types:
+  aws_lambda_function, aws_api_gateway_rest_api, aws_api_gateway_v2_api,
+  aws_dynamodb_table, aws_s3_bucket, aws_sqs_queue, aws_sns_topic,
+  aws_cloudwatch_event_bus, aws_cloudwatch_event_rule, aws_cloudwatch_event_target,
+  aws_cognito_user_pool,
+  aws_lambda_event_source_mapping, aws_lambda_permission,
+  aws_sns_topic_subscription, aws_iam_role, aws_iam_role_policy
+- Always include aws_lambda_permission when API Gateway invokes Lambda
+- Always include aws_lambda_event_source_mapping when SQS/SNS triggers Lambda
+- Always include an IAM role and policy for each Lambda function
+- Production-safe defaults:
+  * S3: include aws_s3_bucket_public_access_block with all = true
+  * DynamoDB: point_in_time_recovery block with enabled = true
+  * SQS: visibility_timeout_seconds = 180 minimum
+  * Lambda: timeout = 30 minimum (never use AWS default 3)
+- Resource names must be valid Terraform identifiers (lowercase, underscores only)
+- Use descriptive names matching the service purpose ("order_processor" not "lambda1")
+- Do NOT include variables.tf, outputs.tf, or modules — single main.tf equivalent
+- Each resource block must have attributes on separate lines (not all on one line)
+
+MANDATORY DEFAULTS — apply these to every relevant resource without exception:
+- Every aws_api_gateway_rest_api must include this comment directly above it:
+  # WAF REQUIRED: associate aws_wafv2_web_acl_association with this API Gateway for production
+  AND its deployment stage must set throttling_settings (rate_limit and burst_limit).
+- Every aws_cognito_user_pool must set: mfa_configuration = "OPTIONAL"
+- Every aws_lambda_function must set: reserved_concurrent_executions = 100
+- Every aws_cloudwatch_event_bus must have at least one aws_cloudwatch_event_rule and one
+  aws_cloudwatch_event_target wired to it, with the target pointing at a Lambda or SQS resource.
+  NEVER generate a bare event bus with no rules attached — it is a broken architecture.
+- Every aws_sqs_queue referenced by an aws_lambda_event_source_mapping must set
+  visibility_timeout_seconds = (connected Lambda's timeout × 6). Calculate this explicitly —
+  if the Lambda timeout is 30, the queue's visibility_timeout_seconds must be at least 180.
+
 MODE 3 — PROPERTY UPDATE
 Only activate MODE 3 when the user is explicitly requesting an action — not when they are asking a question.
 
@@ -166,6 +213,13 @@ Use MODE 3 for these validation fixes:
 - DynamoDB no PITR → { "pointInTimeRecovery": true }
 - API Gateway no throttling → { "throttlingEnabled": true }
 - Lambda no DLQ on async path → { "hasDeadLetterQueue": true }
+- Cognito MFA disabled → { "mfaMode": "OPTIONAL" }
+- Cognito Advanced Security disabled → { "advancedSecurity": true }
+
+Cognito field names — use these exact names, there is no other valid spelling:
+"Cognito MFA is controlled by the field mfaMode (string: OFF | OPTIONAL | REQUIRED), not a boolean.
+Cognito Advanced Security is controlled by the field advancedSecurity (boolean), not advancedSecurityEnabled."
+NEVER emit "mfaEnabled" or "advancedSecurityEnabled" — these fields do not exist on the node schema and will be silently dropped.
 
 CRITICAL RULES for MODE 3:
 - Use the EXACT nodeId from the graph state nodes array
@@ -222,6 +276,30 @@ function summarizeDiagram({ nodes = [], edges = [] } = {}) {
   out += `\n\nConnections:\n${edgeLines.length ? edgeLines.join('\n') : '  (none)'}`;
   if (isolated.length) out += `\n\nDisconnected nodes (no edges — likely broken): ${isolated.join(', ')}`;
   return out;
+}
+
+function parseHclBlock(content) {
+  const match = content.match(/<INGEN_TERRAFORM>([\s\S]*?)<\/INGEN_TERRAFORM>/);
+  if (!match) return null;
+  return match[1].trim();
+}
+
+function extractHclDescription(hcl) {
+  const hasApiGw   = hcl.includes('aws_api_gateway');
+  const hasLambda  = hcl.includes('aws_lambda_function');
+  const hasDynamo  = hcl.includes('aws_dynamodb_table');
+  const hasSqs     = hcl.includes('aws_sqs_queue');
+  const hasSns     = hcl.includes('aws_sns_topic');
+  const hasS3      = hcl.includes('aws_s3_bucket');
+  const hasCognito = hcl.includes('aws_cognito_user_pool');
+  const parts = [];
+  if (hasApiGw && hasLambda) parts.push('Serverless API');
+  if (hasSqs) parts.push('async queue processing');
+  if (hasSns) parts.push('pub/sub notifications');
+  if (hasDynamo) parts.push('DynamoDB storage');
+  if (hasS3) parts.push('S3 storage');
+  if (hasCognito) parts.push('Cognito auth');
+  return parts.length > 0 ? parts.join(', ') : 'AWS serverless architecture';
 }
 
 function parseDiagramBlock(content) {
@@ -360,6 +438,15 @@ export async function POST(req) {
     const update = parseUpdateBlock(content);
     if (update) {
       return Response.json({ type: 'property_update', updates: update.updates });
+    }
+
+    const hclContent = parseHclBlock(content);
+    if (hclContent) {
+      return Response.json({
+        type: 'terraform_generation',
+        hcl: hclContent,
+        description: extractHclDescription(hclContent),
+      });
     }
 
     const diagram = parseDiagramBlock(content);

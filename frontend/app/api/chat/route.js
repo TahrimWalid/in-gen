@@ -144,7 +144,7 @@ function hasExtensionIntent(message) {
   return EXTENSION_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-function summarizeDiagram({ nodes = [], edges = [], issues = [] } = {}) {
+function summarizeDiagram({ nodes = [], edges = [] } = {}) {
   if (!nodes.length) return 'The canvas is currently empty.';
 
   const labelById = {};
@@ -178,10 +178,6 @@ function summarizeDiagram({ nodes = [], edges = [], issues = [] } = {}) {
   out += `\n\nNodes:\n${nodeLines.join('\n')}`;
   out += `\n\nConnections:\n${edgeLines.length ? edgeLines.join('\n') : '  (none)'}`;
   if (isolated.length) out += `\n\nDisconnected nodes (no edges — likely broken): ${isolated.join(', ')}`;
-  if (issues?.length) {
-    const ilines = issues.map(i => `  - [${(i.severity || 'issue').toUpperCase()}] ${i.message}`);
-    out += `\n\nActive validation issues:\n${ilines.join('\n')}`;
-  }
   return out;
 }
 
@@ -249,11 +245,19 @@ export async function POST(req) {
     }
   }
 
+  const issuesSummary = graphState.validationIssues?.length > 0
+    ? `\n\nACTIVE VALIDATION ISSUES (${graphState.validationIssues.length}):\n` +
+      graphState.validationIssues.map(issue =>
+        `- [${issue.severity.toUpperCase()}] ${issue.ruleId}: ${issue.message}` +
+        (issue.nodeId ? ` (node: ${issue.nodeId})` : '')
+      ).join('\n')
+    : '\n\nVALIDATION: All checks passing.';
+
   const withGraph = [
     ...capped.slice(0, -1),
     {
       ...last,
-      content: `${last.content}\n\n${summarizeDiagram(graphState)}`,
+      content: `${last.content}\n\n${summarizeDiagram(graphState)}${issuesSummary}`,
     },
   ];
 

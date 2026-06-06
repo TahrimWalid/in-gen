@@ -45,7 +45,7 @@ export default function ChatSidebar({ onClose }) {
 
   const nodes = useStore(state => state.nodes);
   const edges = useStore(state => state.edges);
-  const issues = useStore(state => state.issues);
+  const issues = useStore(state => state.issues || []);
   const streamNodes = useStore(state => state.streamNodes);
   const updateWorkspaceMessages = useStore(state => state.updateWorkspaceMessages);
   const getCurrentWorkspace = useStore(state => state.getCurrentWorkspace);
@@ -146,7 +146,7 @@ export default function ChatSidebar({ onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updated.map(m => ({ role: m.role, content: m.content })),
-          graphState: { nodes, edges, issues },
+          graphState: { nodes, edges, validationIssues: issues },
           thinkingMode,
         }),
       });

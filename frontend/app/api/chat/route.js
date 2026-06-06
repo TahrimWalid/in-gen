@@ -101,11 +101,13 @@ Valid node types: lambda, apiGateway, dynamodb, s3, eventBridge, sqs, sns, cogni
 
 Node data defaults by type:
 lambda: timeout(int), memorySize(int), hasDeadLetterQueue(bool)
-sqs: visibilityTimeout(int), isFifo(bool)
+sqs: visibilityTimeout(int, default 180), isFifo(bool)
 s3: blockPublicAccess(bool), versioning(bool), encryption(bool)
 apiGateway: throttlingEnabled(bool), loggingEnabled(bool)
 dynamodb: pointInTimeRecovery(bool), billingMode(string)
 eventBridge, sns, cognito: no extra data needed
+
+CRITICAL SQS RULE: When an SQS queue connects to a Lambda function, always set the SQS visibilityTimeout to at least 6 × the Lambda timeout value. If Lambda timeout is 30s, SQS visibilityTimeout must be at least 180s. If Lambda timeout is 15s, SQS visibilityTimeout must be at least 90s. Never generate an SQS queue with visibilityTimeout < (connected Lambda timeout × 6).
 
 Valid edge authType values:
 "COGNITO" — API Gateway with user authentication (Cognito User Pool)

@@ -15,9 +15,10 @@ function getServiceDefaults(serviceType) {
 }
 
 const SAFETY_OVERRIDES = {
-  s3:         { blockPublicAccess: true, encryption: true },
-  apiGateway: { throttlingEnabled: true },
+  s3:         { blockPublicAccess: true, encryption: true, versioning: false },
+  apiGateway: { throttlingEnabled: true, loggingEnabled: false },
   dynamodb:   { pointInTimeRecovery: true },
+  lambda:     { hasDeadLetterQueue: false },
 };
 
 function normalizeServiceType(type) {
@@ -368,28 +369,26 @@ export const useStore = create((set, get) => ({
       return Math.max(...existing.map(n => n.position?.y ?? 0)) + 300;
     })();
 
-    const validNodes = incomingNodes.map((node, index) => ({
+    const safeNodes = incomingNodes.map((node, index) => ({
       ...node,
-      x: (typeof node.x === 'number' && !isNaN(node.x)) ? node.x : 200 + (index * 280),
-      y: (typeof node.y === 'number' && !isNaN(node.y)) ? node.y : 250,
+      x: (typeof node.x === 'number' && !isNaN(node.x)) ? node.x : 200 + (index * 300),
+      y: (typeof node.y === 'number' && !isNaN(node.y)) ? node.y : 250 + (Math.floor(index / 3) * 200),
     }));
 
     const idMap = {};
-    validNodes.forEach(n => { idMap[n.id] = crypto.randomUUID(); });
+    safeNodes.forEach(n => { idMap[n.id] = crypto.randomUUID(); });
 
-    for (let index = 0; index < validNodes.length; index++) {
-      const node = validNodes[index];
+    for (let index = 0; index < safeNodes.length; index++) {
+      const node = safeNodes[index];
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const serviceType = normalizeServiceType(node.type);
       const newId = idMap[node.id];
-      const safeX = typeof node.x === 'number' && !isNaN(node.x) ? node.x : 200 + (index * 280);
-      const safeY = typeof node.y === 'number' && !isNaN(node.y) ? node.y : 250;
 
       const enrichedNode = {
         id: newId,
         type: 'awsNode',
-        position: { x: safeX, y: safeY + yOffset },
+        position: { x: node.x, y: node.y + yOffset },
         data: {
           ...getServiceDefaults(serviceType),
           ...(node.data || {}),

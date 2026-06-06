@@ -53,12 +53,23 @@ export default function ChatSidebar({ onClose }) {
           ...prev,
           { role: 'system', content: data.error, timestamp: new Date(), isError: true },
         ]);
+      } else if (data.type === 'diagram_generation') {
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: `Building architecture: ${data.description}`, timestamp: new Date() },
+        ]);
+        
+        // TODO: UPDATE CANVAS HERE
+        // useStore.getState().setNodes(data.nodes);
+        // useStore.getState().setEdges(data.edges);
+
       } else {
         setMessages(prev => [
           ...prev,
-          { role: 'assistant', content: data.content, timestamp: new Date() },
+          { role: 'assistant', content: data.textResponse, timestamp: new Date() },
         ]);
       }
+
     } catch {
       setMessages(prev => [
         ...prev,
@@ -158,6 +169,12 @@ export default function ChatSidebar({ onClose }) {
       </div>
 
       <div className="p-4 border-t border-border bg-surface shrink-0">
+        <style>{`
+          .no-scrollbar::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+        
         <div className="flex gap-2 items-end">
           <textarea
             value={input}
@@ -165,15 +182,20 @@ export default function ChatSidebar({ onClose }) {
             onKeyDown={handleKeyDown}
             placeholder="Ask about your architecture..."
             rows={1}
-            className="flex-1 px-3 py-2.5 border border-border-input rounded-xl text-sm text-input-text bg-input-bg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-            style={{ maxHeight: '96px', overflowY: 'auto' }}
+            className="flex-1 px-4 py-2.5 border border-border-input rounded-xl text-sm text-input-text bg-input-bg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none no-scrollbar"
+            style={{ 
+              maxHeight: '96px', 
+              overflowY: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none' 
+            }}
           />
           <button
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || isLoading}
-            className="w-9 h-9 bg-purple-600 text-white rounded-full hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 flex items-center justify-center"
+            className="w-10 h-10 shrink-0 bg-purple-600 text-white rounded-full hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center mb-0.5"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-4 h-4 ml-0.5" />
           </button>
         </div>
       </div>

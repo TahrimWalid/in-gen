@@ -226,10 +226,14 @@ export default function ChatSidebar({ onClose }) {
           },
         ]);
       } else {
-        const content = data.textResponse || data.content || '';
+        const raw = data.textResponse || data.content || '';
+        const hasLeakedTag = /<INGEN_DIAGRAM>|<INGEN_TERRAFORM>/.test(raw);
+        const content = hasLeakedTag
+          ? 'The AI returned a diagram in an unexpected format. Please try again.'
+          : raw;
         setMessages(prev => [
           ...prev,
-          { role: 'assistant', content, timestamp: new Date() },
+          { role: 'assistant', content, timestamp: new Date(), isError: hasLeakedTag },
         ]);
       }
     } catch (err) {

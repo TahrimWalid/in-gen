@@ -12,17 +12,29 @@ export default function ExportModal({ isOpen, onClose, onExportPng, isExportingP
   const [code, setCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState('hcl');
+  const [exportError, setExportError] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+    setExportError(null);
+    setCopied(false);
+    try {
       setCode(sourceHcl || compileToTerraform(nodes, edges));
-      setCopied(false);
+    } catch (err) {
+      setExportError(err);
+      setCode('');
     }
   }, [isOpen, nodes, edges, sourceHcl]);
 
   const handleRecompile = () => {
+    setExportError(null);
     clearSourceHcl();
-    setCode(compileToTerraform(nodes, edges));
+    try {
+      setCode(compileToTerraform(nodes, edges));
+    } catch (err) {
+      setExportError(err);
+      setCode('');
+    }
   };
 
   if (!isOpen) return null;
@@ -70,7 +82,7 @@ export default function ExportModal({ isOpen, onClose, onExportPng, isExportingP
 
         {activeTab === 'hcl' ? (
           <div className="relative flex-1 bg-[#1e1e1e] overflow-auto flex flex-col">
-            {sourceHcl && (
+            {sourceHcl && !exportError && (
               <div className="shrink-0 flex items-center justify-between gap-4 bg-slate-800 border-b border-slate-600 px-5 py-3">
                 <p className="text-slate-300 text-xs">
                   This diagram was generated from Terraform. Showing original source HCL.
@@ -83,18 +95,32 @@ export default function ExportModal({ isOpen, onClose, onExportPng, isExportingP
                 </button>
               </div>
             )}
-            <div className="relative flex-1 p-6">
-              <button
-                onClick={handleCopy}
-                className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
-              >
-                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                {copied ? 'Copied!' : 'Copy Code'}
-              </button>
-              <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
-                <code>{code}</code>
-              </pre>
-            </div>
+            {exportError ? (
+              <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
+                <p className="text-slate-400 text-sm max-w-sm leading-relaxed">
+                  Export temporarily unavailable. Try clearing the canvas and regenerating, or use the Recompile button.
+                </p>
+                <button
+                  onClick={handleRecompile}
+                  className="text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                >
+                  Recompile from current diagram
+                </button>
+              </div>
+            ) : (
+              <div className="relative flex-1 p-6">
+                <button
+                  onClick={handleCopy}
+                  className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-md transition-colors flex items-center gap-2 text-sm font-semibold border border-slate-700"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  {copied ? 'Copied!' : 'Copy Code'}
+                </button>
+                <pre className="text-sm font-mono text-emerald-400/90 leading-relaxed">
+                  <code>{code}</code>
+                </pre>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex-1 bg-[#1e1e1e] flex flex-col items-center justify-center gap-4 p-8">

@@ -5,14 +5,17 @@ import { Group, Panel } from 'react-resizable-panels';
 import Canvas from '@/components/Canvas';
 import Sidebar from '@/components/Sidebar';
 import ChatSidebar from '@/components/ChatSidebar';
+import HclEditor from '@/components/HclEditor';
 import ResizeHandle from '@/components/ResizeHandle';
 
 const LEFT_WIDTH_KEY = 'ingen-sidebar-left-width';
 const LEFT_COLLAPSED_KEY = 'ingen-sidebar-left-collapsed';
 const RIGHT_WIDTH_KEY = 'ingen-sidebar-right-width';
+const EDITOR_WIDTH_KEY = 'ingen-editor-width';
 
 const DEFAULT_LEFT_WIDTH = 280;
 const DEFAULT_RIGHT_WIDTH = 340;
+const DEFAULT_EDITOR_WIDTH = 380;
 const LEFT_COLLAPSED_SIZE = 48;
 
 function readLocalInt(key, fallback) {
@@ -28,20 +31,29 @@ export default function Home() {
   const leftPanelRef = useRef(null);
   const rightPanelRef = useRef(null);
 
-  // Consistent defaults for SSR/hydration — localStorage applied after mount in useEffect
-  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  // 'none' | 'editor' | 'chat' — which tool is visible in the right panel
+  // Ref avoids stale closure issues in callbacks; state drives the render
+  const rightViewRef = useRef('none');
+  const [rightView, setRightView] = useState('none');
 
-  // After hydration, restore saved panel sizes via imperative API (avoids SSR mismatch)
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+
+  const setView = useCallback((v) => {
+    rightViewRef.current = v;
+    setRightView(v);
+  }, []);
+
+  // After hydration, restore left panel size from localStorage
   useEffect(() => {
-    const panel = leftPanelRef.current;
-    if (!panel) return;
-    const collapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
-    if (collapsed) {
-      panel.collapse();
-    } else {
-      const saved = readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
-      if (saved !== DEFAULT_LEFT_WIDTH) panel.resize(saved);
+    const leftPanel = leftPanelRef.current;
+    if (leftPanel) {
+      const collapsed = localStorage.getItem(LEFT_COLLAPSED_KEY) === 'true';
+      if (collapsed) {
+        leftPanel.collapse();
+      } else {
+        const saved = readLocalInt(LEFT_WIDTH_KEY, DEFAULT_LEFT_WIDTH);
+        if (saved !== DEFAULT_LEFT_WIDTH) leftPanel.resize(saved);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -56,21 +68,44 @@ export default function Home() {
     }
   }, []);
 
+  const closeRightPanel = useCallback(() => {
+    setView('none');
+    rightPanelRef.current?.collapse();
+  }, [setView]);
+
+  const toggleEditor = useCallback(() => {
+    const panel = rightPanelRef.current;
+    if (!panel) return;
+    if (rightViewRef.current === 'editor') {
+      setView('none');
+      panel.collapse();
+    } else {
+      setView('editor');
+      panel.resize(readLocalInt(EDITOR_WIDTH_KEY, DEFAULT_EDITOR_WIDTH));
+    }
+  }, [setView]);
+
   const toggleChat = useCallback(() => {
     const panel = rightPanelRef.current;
     if (!panel) return;
-    if (panel.isCollapsed()) {
-      panel.resize(readLocalInt(RIGHT_WIDTH_KEY, DEFAULT_RIGHT_WIDTH));
-    } else {
+    if (rightViewRef.current === 'chat') {
+      setView('none');
       panel.collapse();
+    } else {
+      setView('chat');
+      panel.resize(readLocalInt(RIGHT_WIDTH_KEY, DEFAULT_RIGHT_WIDTH));
     }
-  }, []);
+  }, [setView]);
 
   useEffect(() => {
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'b') {
         e.preventDefault();
         toggleLeftSidebar();
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'e') {
+        e.preventDefault();
+        toggleEditor();
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
         e.preventDefault();
@@ -79,7 +114,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [toggleLeftSidebar, toggleChat]);
+  }, [toggleLeftSidebar, toggleEditor, toggleChat]);
 
   const handleLeftResize = useCallback((size) => {
     const px = size.inPixels;
@@ -91,10 +126,19 @@ export default function Home() {
 
   const handleRightResize = useCallback((size) => {
     const px = size.inPixels;
-    const open = px > 0;
-    setIsChatOpen(open);
-    if (open) localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(px)));
-  }, []);
+    if (px <= 10) {
+      // Dragged to closed — sync view state
+      setView('none');
+      return;
+    }
+    const view = rightViewRef.current;
+    if (view === 'chat') localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(px)));
+    if (view === 'editor') localStorage.setItem(EDITOR_WIDTH_KEY, String(Math.round(px)));
+  }, [setView]);
+
+  const isEditorOpen = rightView === 'editor';
+  const isChatOpen = rightView === 'chat';
+  const isRightOpen = rightView !== 'none';
 
   return (
     <main className="w-screen h-screen overflow-hidden">
@@ -119,26 +163,36 @@ export default function Home() {
           id="canvas"
           groupResizeBehavior="preserve-relative-size"
         >
-          <Canvas onToggleChat={toggleChat} isChatOpen={isChatOpen} />
+          <Canvas
+            onToggleChat={toggleChat}
+            isChatOpen={isChatOpen}
+            onToggleEditor={toggleEditor}
+            isEditorOpen={isEditorOpen}
+          />
         </Panel>
 
         <ResizeHandle
           id="right-sep"
-          style={{ opacity: isChatOpen ? 1 : 0, pointerEvents: isChatOpen ? 'auto' : 'none' }}
+          style={{ opacity: isRightOpen ? 1 : 0, pointerEvents: isRightOpen ? 'auto' : 'none' }}
         />
 
         <Panel
-          id="right-sidebar"
+          id="right-panel"
           panelRef={rightPanelRef}
           defaultSize={0}
           minSize={280}
-          maxSize={520}
+          maxSize={600}
           collapsible
           collapsedSize={0}
           groupResizeBehavior="preserve-pixel-size"
           onResize={handleRightResize}
         >
-          <ChatSidebar onClose={() => rightPanelRef.current?.collapse()} />
+          <div style={{ display: isEditorOpen ? 'flex' : 'none', width: '100%', height: '100%', flexDirection: 'column' }}>
+            <HclEditor onClose={closeRightPanel} />
+          </div>
+          <div style={{ display: isChatOpen ? 'flex' : 'none', width: '100%', height: '100%', flexDirection: 'column' }}>
+            <ChatSidebar onClose={closeRightPanel} />
+          </div>
         </Panel>
       </Group>
     </main>

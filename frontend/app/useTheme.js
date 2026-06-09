@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export function useTheme() {
-  const [theme, setTheme] = useState('light');
-
-  useEffect(() => {
-    const stored = localStorage.getItem('ingen-theme') || 'light';
-    setTheme(stored);
-  }, []);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ingen-theme') || 'light';
+    }
+    return 'light';
+  });
 
   const toggle = () => {
     setTheme(prev => {

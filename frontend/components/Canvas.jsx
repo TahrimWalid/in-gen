@@ -14,7 +14,7 @@ import TemplatesModal from './TemplatesModal';
 import ImportTerraformModal from './ImportTerraformModal';
 import DiagramConfirmModal from './DiagramConfirmModal';
 import WorkspaceTabBar from './WorkspaceTabBar';
-import { Undo2, Redo2, Code2, Trash2, Sparkles, Network, Share2, LayoutTemplate, FolderInput } from 'lucide-react';
+import { Undo2, Redo2, Code2, Trash2, Sparkles, Network, Share2, LayoutTemplate, FolderInput, CodeXml } from 'lucide-react';
 import { useTheme } from '../app/useTheme';
 import 'reactflow/dist/style.css';
 
@@ -44,7 +44,7 @@ async function decodeState(param) {
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
-export default function Canvas({ onToggleChat, isChatOpen }) {
+export default function Canvas({ onToggleChat, isChatOpen, onToggleEditor, isEditorOpen }) {
   const reactFlowWrapper = useRef(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -234,6 +234,19 @@ export default function Canvas({ onToggleChat, isChatOpen }) {
         >
           <FolderInput className="w-3.5 h-3.5" />
           Import
+        </button>
+
+        <button
+          onClick={onToggleEditor}
+          title="HCL Editor (Ctrl+E)"
+          className={`h-8 border px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            isEditorOpen
+              ? 'bg-purple-600 border-purple-600 text-white'
+              : 'bg-surface border-border text-secondary hover:bg-surface-hover'
+          }`}
+        >
+          <CodeXml className="w-3.5 h-3.5" />
+          HCL Editor
         </button>
 
         <button

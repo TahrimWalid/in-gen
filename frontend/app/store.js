@@ -329,6 +329,56 @@ export const useStore = create((set, get) => ({
     get().scheduleAutoSave();
   },
 
+  applyParsedHcl: (parsedNodes, parsedEdges, hcl) => {
+    get().takeSnapshot();
+
+    const idMap = {};
+    parsedNodes.forEach(n => { idMap[n.id] = crypto.randomUUID(); });
+
+    const nodes = parsedNodes.map((node, index) => {
+      const serviceType = normalizeServiceType(node.type);
+      return {
+        id: idMap[node.id],
+        type: 'awsNode',
+        position: {
+          x: (typeof node.x === 'number' && !isNaN(node.x)) ? node.x : 200 + (index * 300),
+          y: (typeof node.y === 'number' && !isNaN(node.y)) ? node.y : 250 + (Math.floor(index / 3) * 200),
+        },
+        data: {
+          ...getServiceDefaults(serviceType),
+          ...(node.data || {}),
+          ...(SAFETY_OVERRIDES[serviceType] || {}),
+          label: node.label,
+          service: serviceType,
+        },
+      };
+    });
+
+    const edges = parsedEdges.map(edge => {
+      const sourceId = idMap[edge.source] || edge.source;
+      const sourceNode = nodes.find(n => n.id === sourceId);
+      const defaultAuthType = sourceNode?.data?.service === 'apiGateway' ? 'COGNITO' : 'NONE';
+      return {
+        id: crypto.randomUUID(),
+        source: sourceId,
+        target: idMap[edge.target] || edge.target,
+        type: 'awsEdge',
+        animated: true,
+        data: {
+          authType: (edge.authType && edge.authType !== 'NONE') ? edge.authType : defaultAuthType,
+          invocationType: edge.invocationType === 'Synchronous' ? 'Sync'
+            : edge.invocationType === 'Asynchronous' ? 'Async'
+            : (edge.invocationType || 'Sync'),
+          iamPermissions: [],
+        },
+      };
+    });
+
+    set({ nodes, edges, sourceHcl: hcl, selectedElement: null, pendingFitView: true });
+    get().runValidation();
+    get().scheduleAutoSave();
+  },
+
   runValidation: () => {
     const { nodes, edges } = get();
     set({ issues: validateArchitecture(nodes, edges) });

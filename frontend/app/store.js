@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges, addEdge } from 'reactflow';
 import { validateArchitecture } from '../lib/ValidationEngine';
 import { getServiceDefaults } from '../lib/serviceDefaults';
+import { calculateScore } from '../lib/architectureScorer';
 
 const SAFETY_OVERRIDES = {
   s3:         { blockPublicAccess: true, encryption: true, versioning: false },
@@ -71,6 +72,7 @@ export const useStore = create((set, get) => ({
   nodes: [],
   edges: [],
   issues: [],
+  architectureScore: null,
   past: [],
   future: [],
   selectedElement: null,
@@ -169,6 +171,7 @@ export const useStore = create((set, get) => ({
       nodes: [],
       edges: [],
       issues: [],
+      architectureScore: null,
       selectedElement: null,
       pendingFitView: false,
       saveStatus: 'idle',
@@ -188,7 +191,7 @@ export const useStore = create((set, get) => ({
       // Always keep at least one workspace — clear it instead of deleting
       clearTimeout(autoSaveTimer);
       const cleared = { ...workspaces[0], nodes: [], edges: [], messages: [], updatedAt: new Date().toISOString() };
-      set({ workspaces: [cleared], nodes: [], edges: [], issues: [], selectedElement: null, saveStatus: 'idle', past: [], future: [] });
+      set({ workspaces: [cleared], nodes: [], edges: [], issues: [], architectureScore: null, selectedElement: null, saveStatus: 'idle', past: [], future: [] });
       persistWorkspaces([cleared]);
       window.dispatchEvent(new CustomEvent('workspace-switched', { detail: { messages: [] } }));
       return;
@@ -284,7 +287,7 @@ export const useStore = create((set, get) => ({
     clearTimeout(autoSaveTimer);
     set({ saveStatus: 'idle' });
     get().takeSnapshot();
-    set({ nodes: [], edges: [], issues: [], selectedElement: null, sourceHcl: null });
+    set({ nodes: [], edges: [], issues: [], architectureScore: null, selectedElement: null, sourceHcl: null });
     get().scheduleAutoSave();
   },
 
@@ -326,6 +329,10 @@ export const useStore = create((set, get) => ({
     });
     set({ nodes: updatedNodes });
     get().runValidation();
+    const selected = get().selectedElement;
+    if (selected?.elementType === 'node' && updates.some(u => u.nodeId === selected.id)) {
+      set({ selectedElement: { ...updatedNodes.find(n => n.id === selected.id), elementType: 'node' } });
+    }
     get().scheduleAutoSave();
   },
 
@@ -381,7 +388,8 @@ export const useStore = create((set, get) => ({
 
   runValidation: () => {
     const { nodes, edges } = get();
-    set({ issues: validateArchitecture(nodes, edges) });
+    const issues = validateArchitecture(nodes, edges);
+    set({ issues, architectureScore: calculateScore(issues, nodes) });
   },
 
   takeSnapshot: () => {

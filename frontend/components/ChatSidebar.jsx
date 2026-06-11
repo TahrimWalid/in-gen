@@ -256,6 +256,15 @@ export default function ChatSidebar({ onClose }) {
     }
   }, [messages, nodes, edges, issues, isLoading, isStreaming, thinkingMode, applyPropertyUpdates]);
 
+  // Listen for AI-assisted structural fixes triggered from the issues panel
+  useEffect(() => {
+    const handleAiFix = (e) => {
+      sendMessage(e.detail.message);
+    };
+    window.addEventListener('ingen-ai-fix', handleAiFix);
+    return () => window.removeEventListener('ingen-ai-fix', handleAiFix);
+  }, [sendMessage]);
+
   const handleConfirm = useCallback(async (replace) => {
     const gen = pendingGeneration;
     setPendingGeneration(null);

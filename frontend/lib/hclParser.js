@@ -18,35 +18,27 @@ const EDGE_RESOURCE_TYPES = new Set([
   'aws_lambda_event_source_mapping',
   'aws_lambda_permission',
   'aws_sns_topic_subscription',
-  'aws_iam_role_policy',
-  'aws_iam_role_policy_attachment',
 ]);
 
-const LAYOUT_COLUMNS = {
-  apiGateway:  0,
-  cognito:     0,
-  lambda:      1,
-  sqs:         1,
-  sns:         1,
-  eventbridge: 1,
-  dynamodb:    2,
-  s3:          2,
+const LAYOUT = {
+  columns: {
+    apiGateway:  0,
+    cognito:     0,
+    lambda:      1,
+    eventbridge: 1,
+    sqs:         2,
+    sns:         2,
+    dynamodb:    2,
+    s3:          2,
+  },
+  colWidth: 320,
+  rowHeight: 140,
+  startX: 120,
+  startY: 80,
 };
-
-const COLUMN_WIDTH = 300;
-const ROW_HEIGHT = 150;
-const START_X = 150;
-const START_Y = 150;
 
 function normalizeType(serviceType) {
   return serviceType === 'eventBridge' ? 'eventbridge' : serviceType;
-}
-
-function getPosition(serviceType, columnCounts) {
-  const col = LAYOUT_COLUMNS[serviceType] ?? 3;
-  const row = columnCounts[col] || 0;
-  columnCounts[col] = row + 1;
-  return { x: START_X + col * COLUMN_WIDTH, y: START_Y + row * ROW_HEIGHT };
 }
 
 // Strip ${...} wrapper that hcl2json uses for resource references
@@ -64,15 +56,262 @@ function arr0(val) {
   return Array.isArray(val) ? val[0] : val;
 }
 
-function cleanLabel(raw) {
-  return raw
-    .replace(/_/g, ' ')
-    .replace(/([A-Z])/g, ' $1')
+// Detect a shared naming prefix (e.g. "social_media") across resource identifiers
+// so it can be stripped from generated labels.
+function detectCommonPrefix(resourceNames) {
+  if (!resourceNames || resourceNames.length < 2) return '';
+
+  const splitNames = resourceNames.map(n => n.toLowerCase().replace(/-/g, '_').split('_'));
+  const minLength = Math.min(...splitNames.map(p => p.length));
+  if (minLength < 2) return '';
+
+  const minCount = Math.max(2, Math.floor(resourceNames.length * 0.6));
+  const prefixParts = [];
+
+  for (let i = 0; i < minLength - 1; i++) {
+    const part = splitNames[0][i];
+    const matchCount = splitNames.filter(p => p[i] === part).length;
+    if (matchCount < minCount) break;
+    prefixParts.push(part);
+  }
+
+  return prefixParts.join('_');
+}
+
+function cleanLabel(raw, commonPrefix = '') {
+  if (!raw) return '';
+
+  let cleaned = String(raw)
+    .replace(/\$\{[^}]*\}/g, '')
+    .replace(/-+$/, '')
     .trim()
-    .replace(/\s+/g, ' ')
-    .split(' ')
+    .toLowerCase()
+    .replace(/-/g, '_');
+
+  if (commonPrefix && cleaned.startsWith(commonPrefix)) {
+    const stripped = cleaned.slice(commonPrefix.length).replace(/^_+/, '');
+    if (stripped) cleaned = stripped;
+  }
+
+  return cleaned
+    .split('_')
+    .filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+}
+
+function findBalanced(text, startIndex, openChar, closeChar) {
+  let depth = 0;
+  for (let i = startIndex; i < text.length; i++) {
+    if (text[i] === openChar) depth++;
+    else if (text[i] === closeChar) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+// Extract { actions, resources } per IAM statement from a raw HCL object body
+// (used when jsonencode() wraps an expression hcl2json couldn't fully evaluate).
+function parseStatementBlock(block) {
+  const actions = [];
+  const resources = [];
+
+  const actionMatch = block.match(/Action\s*=\s*(\[[\s\S]*?\]|"[^"]*")/i);
+  if (actionMatch) {
+    const raw = actionMatch[1];
+    if (raw.startsWith('[')) {
+      (raw.match(/"([^"]*)"/g) || []).forEach(m => actions.push(m.slice(1, -1)));
+    } else {
+      actions.push(raw.slice(1, -1));
+    }
+  }
+
+  const resourceMatch = block.match(/Resource\s*=\s*(\[[\s\S]*?\]|"[^"]*"|[^\n,}]+)/i);
+  if (resourceMatch) {
+    const raw = resourceMatch[1].trim();
+    if (raw.startsWith('[')) {
+      (raw.match(/"([^"]*)"|[\w.]+/g) || []).forEach(m => resources.push(m.replace(/"/g, '')));
+    } else if (raw.startsWith('"')) {
+      resources.push(raw.slice(1, -1));
+    } else {
+      resources.push(raw.replace(/,$/, '').trim());
+    }
+  }
+
+  return { actions, resources };
+}
+
+function extractStatementsFromHcl(source) {
+  const stmtMatch = source.match(/Statement\s*=\s*\[/);
+  if (!stmtMatch) return [];
+
+  const arrStart = stmtMatch.index + stmtMatch[0].length - 1;
+  const arrEnd = findBalanced(source, arrStart, '[', ']');
+  if (arrEnd === -1) return [];
+
+  const arrContent = source.slice(arrStart + 1, arrEnd);
+  const statements = [];
+  let cursor = 0;
+
+  while (true) {
+    const braceStart = arrContent.indexOf('{', cursor);
+    if (braceStart === -1) break;
+    const braceEnd = findBalanced(arrContent, braceStart, '{', '}');
+    if (braceEnd === -1) break;
+    statements.push(parseStatementBlock(arrContent.slice(braceStart, braceEnd + 1)));
+    cursor = braceEnd + 1;
+  }
+
+  return statements;
+}
+
+function extractStatements(parsedPolicy) {
+  if (!parsedPolicy) return [];
+
+  if (parsedPolicy.__hclSource) {
+    return extractStatementsFromHcl(parsedPolicy.__hclSource);
+  }
+
+  const stmts = parsedPolicy.Statement || parsedPolicy.statement;
+  const arr = Array.isArray(stmts) ? stmts : (stmts ? [stmts] : []);
+
+  return arr.map(s => {
+    const action = s.Action ?? s.action ?? [];
+    const resource = s.Resource ?? s.resource ?? [];
+    return {
+      actions: Array.isArray(action) ? action : [action],
+      resources: Array.isArray(resource) ? resource : [resource],
+    };
+  });
+}
+
+// Resolve a policy attribute (possibly jsonencode({...}) wrapped in ${...}) down
+// to either a plain JS object or { __hclSource } for regex-based extraction.
+function parseJsonencodePolicy(policyValue) {
+  if (policyValue == null) return null;
+  if (typeof policyValue === 'object') return policyValue;
+  if (typeof policyValue !== 'string') return null;
+
+  let value = policyValue.trim();
+
+  const exprMatch = value.match(/^\$\{([\s\S]*)\}$/);
+  if (exprMatch) value = exprMatch[1].trim();
+
+  try {
+    return JSON.parse(value);
+  } catch { /* not plain JSON, try jsonencode() extraction */ }
+
+  const jMatch = value.match(/^jsonencode\(([\s\S]*)\)$/);
+  if (jMatch) return { __hclSource: jMatch[1].trim() };
+
+  return { __hclSource: value };
+}
+
+function detectServiceFromActions(actions) {
+  const joined = actions.join(' ').toLowerCase();
+  if (joined.includes('dynamodb:')) return 'dynamodb';
+  if (joined.includes('s3:')) return 's3';
+  if (joined.includes('sqs:')) return 'sqs';
+  if (joined.includes('sns:')) return 'sns';
+  if (joined.includes('events:')) return 'eventBridge';
+  return null;
+}
+
+function resolveResourceTarget(resources, nodesByResourceKey, targetServiceType, nodes) {
+  for (const res of resources) {
+    if (typeof res !== 'string') continue;
+    const refMatch = res.match(/aws_(\w+)\.(\w+)/);
+    if (refMatch) {
+      const key = `aws_${refMatch[1]}.${refMatch[2]}`;
+      if (nodesByResourceKey[key]) return nodesByResourceKey[key];
+    }
+  }
+
+  const normalized = normalizeType(targetServiceType);
+  const fallback = nodes.find(n => n.type === normalized);
+  return fallback ? fallback.id : null;
+}
+
+// Build Lambda -> target-service edges from aws_iam_role_policy resources whose
+// role is attached to a Lambda's execution role.
+function extractIamEdges(resources, nodesByResourceKey, roleToLambda, nodes) {
+  const edges = [];
+  const policies = resources.aws_iam_role_policy || {};
+
+  for (const [, resourceArr] of Object.entries(policies)) {
+    const r = Array.isArray(resourceArr) ? resourceArr[0] : resourceArr;
+    if (!r || typeof r !== 'object') continue;
+
+    const roleMatch = String(r.role || '').match(/aws_iam_role\.(\w+)/);
+    if (!roleMatch) continue;
+
+    const lambdaId = roleToLambda[roleMatch[1]];
+    if (!lambdaId) continue;
+
+    const statements = extractStatements(parseJsonencodePolicy(r.policy));
+
+    for (const stmt of statements) {
+      const targetService = detectServiceFromActions(stmt.actions);
+      if (!targetService) continue;
+
+      const targetId = resolveResourceTarget(stmt.resources, nodesByResourceKey, targetService, nodes);
+      if (!targetId) continue;
+
+      const invocationType = (targetService === 'sqs' || targetService === 'sns' || targetService === 'eventBridge')
+        ? 'Async'
+        : 'Sync';
+
+      edges.push({ id: randomUUID(), source: lambdaId, target: targetId, authType: 'IAM', invocationType });
+    }
+  }
+
+  return edges;
+}
+
+function deduplicateEdges(edges) {
+  const seen = new Set();
+  return edges.filter(e => {
+    const key = `${e.source}->${e.target}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Assigns x/y positions: column by service type, rows sorted by connection
+// count (most-connected first), each column vertically centered.
+function assignLayout(nodes, edges) {
+  const columns = {};
+  for (const node of nodes) {
+    const col = LAYOUT.columns[node.type] ?? 3;
+    if (!columns[col]) columns[col] = [];
+    columns[col].push(node);
+  }
+
+  const connectionCount = (nodeId) =>
+    edges.filter(e => e.source === nodeId || e.target === nodeId).length;
+
+  for (const colNodes of Object.values(columns)) {
+    colNodes.sort((a, b) => connectionCount(b.id) - connectionCount(a.id));
+  }
+
+  const maxColSize = Math.max(...Object.values(columns).map(c => c.length));
+  const positions = {};
+
+  for (const [col, colNodes] of Object.entries(columns)) {
+    const x = LAYOUT.startX + Number(col) * LAYOUT.colWidth;
+    const colHeight = colNodes.length * LAYOUT.rowHeight;
+    const totalHeight = maxColSize * LAYOUT.rowHeight;
+    const offsetY = LAYOUT.startY + (totalHeight - colHeight) / 2;
+
+    colNodes.forEach((node, index) => {
+      positions[node.id] = { x, y: offsetY + index * LAYOUT.rowHeight };
+    });
+  }
+
+  return positions;
 }
 
 function extractLambdaProps(r, name) {
@@ -116,8 +355,12 @@ function extractDynamoDbProps(r, name) {
 
 function extractS3Props(r, name) {
   const versioning = arr0(r.versioning);
+  const bucket = r.bucket;
+  // jsonencode/interpolated bucket names (e.g. "${...}-bucket") aren't useful
+  // as labels — fall back to the Terraform resource identifier instead.
+  const label = (typeof bucket === 'string' && !bucket.includes('${')) ? bucket : name;
   return {
-    label: r.bucket || name,
+    label,
     blockPublicAccess: true,
     versioning: versioning?.enabled || false,
     encryption: true,
@@ -194,25 +437,12 @@ function extractProperties(serviceType, resourceType, resource, resourceName) {
   }
 }
 
-function extractIamActions(policy) {
-  try {
-    const doc = typeof policy === 'string' ? JSON.parse(policy) : policy;
-    const stmts = doc.Statement || doc.statement || [];
-    return stmts.flatMap(s => {
-      const a = s.Action || s.action || [];
-      return Array.isArray(a) ? a : [a];
-    });
-  } catch {
-    return [];
-  }
-}
-
 export async function parseHcl(hclString) {
   const nodes = [];
-  const edges = [];
+  let edges = [];
   const errors = [];
   const nodesByResourceKey = {};
-  const columnCounts = {};
+  const roleToLambda = {};
 
   let parsed;
   try {
@@ -223,7 +453,16 @@ export async function parseHcl(hclString) {
 
   const resources = parsed.resource || {};
 
-  // First pass: build nodes
+  // Pass 1: detect a shared naming prefix across all supported resources
+  const allResourceNames = [];
+  for (const [resourceType, instances] of Object.entries(resources)) {
+    if (!RESOURCE_TYPE_MAP[resourceType]) continue;
+    if (!instances || typeof instances !== 'object') continue;
+    allResourceNames.push(...Object.keys(instances));
+  }
+  const commonPrefix = detectCommonPrefix(allResourceNames);
+
+  // Pass 2: build nodes (positions assigned later)
   for (const [resourceType, instances] of Object.entries(resources)) {
     const rawServiceType = RESOURCE_TYPE_MAP[resourceType];
     if (!rawServiceType) continue;
@@ -235,18 +474,20 @@ export async function parseHcl(hclString) {
       const resource = Array.isArray(resourceArr) ? resourceArr[0] : resourceArr;
       if (!resource || typeof resource !== 'object') continue;
 
-      const pos = getPosition(serviceType, columnCounts);
       const extracted = extractProperties(rawServiceType, resourceType, resource, resourceName);
-      extracted.label = cleanLabel(extracted.label || resourceName);
+      extracted.label = cleanLabel(extracted.label || resourceName, commonPrefix);
       const nodeId = randomUUID();
 
       nodesByResourceKey[`${resourceType}.${resourceName}`] = nodeId;
 
+      if (rawServiceType === 'lambda' && resource.role) {
+        const roleMatch = String(resource.role).match(/aws_iam_role\.(\w+)/);
+        if (roleMatch) roleToLambda[roleMatch[1]] = nodeId;
+      }
+
       nodes.push({
         id: nodeId,
         type: serviceType,
-        x: pos.x,
-        y: pos.y,
         label: extracted.label,
         data: {
           ...getServiceDefaults(serviceType),
@@ -256,7 +497,7 @@ export async function parseHcl(hclString) {
     }
   }
 
-  // Second pass: detect edges from relationship resources
+  // Pass 3: detect edges from relationship resources
   for (const [resourceType, instances] of Object.entries(resources)) {
     if (!EDGE_RESOURCE_TYPES.has(resourceType)) continue;
     if (!instances || typeof instances !== 'object') continue;
@@ -281,13 +522,17 @@ export async function parseHcl(hclString) {
           const targetId = resolveRef(r.function_name, nodesByResourceKey);
           if (targetId) {
             let sourceId = null;
+            let invocationType = 'Sync';
             if (principal.includes('apigateway')) {
               sourceId = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_api_gateway'))?.[1] || null;
             } else if (principal.includes('sns')) {
               sourceId = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_sns_topic.'))?.[1] || null;
+            } else if (principal.includes('events')) {
+              sourceId = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_cloudwatch_event_bus'))?.[1] || null;
+              invocationType = 'Async';
             }
             if (sourceId) {
-              edges.push({ id: randomUUID(), source: sourceId, target: targetId, authType: 'NONE', invocationType: 'Sync' });
+              edges.push({ id: randomUUID(), source: sourceId, target: targetId, authType: 'NONE', invocationType });
             }
           }
         }
@@ -299,44 +544,27 @@ export async function parseHcl(hclString) {
             edges.push({ id: randomUUID(), source: sourceId, target: targetId, authType: 'NONE', invocationType: 'Async' });
           }
         }
-
-        if (resourceType === 'aws_iam_role_policy') {
-          const actions = extractIamActions(r.policy);
-          const lambdaEntry = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_lambda_function'));
-          if (lambdaEntry && actions.length > 0) {
-            const lambdaId = lambdaEntry[1];
-            if (actions.some(a => typeof a === 'string' && a.toLowerCase().includes('dynamodb'))) {
-              const id = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_dynamodb_table'))?.[1];
-              if (id) edges.push({ id: randomUUID(), source: lambdaId, target: id, authType: 'IAM', invocationType: 'Sync' });
-            }
-            if (actions.some(a => typeof a === 'string' && a.toLowerCase().includes('s3:'))) {
-              const id = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_s3_bucket'))?.[1];
-              if (id) edges.push({ id: randomUUID(), source: lambdaId, target: id, authType: 'IAM', invocationType: 'Sync' });
-            }
-            if (actions.some(a => typeof a === 'string' && a.toLowerCase().includes('sqs:sendmessage'))) {
-              const id = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_sqs_queue'))?.[1];
-              if (id) edges.push({ id: randomUUID(), source: lambdaId, target: id, authType: 'IAM', invocationType: 'Async' });
-            }
-            if (actions.some(a => typeof a === 'string' && a.toLowerCase().includes('sns:publish'))) {
-              const id = Object.entries(nodesByResourceKey).find(([k]) => k.startsWith('aws_sns_topic'))?.[1];
-              if (id) edges.push({ id: randomUUID(), source: lambdaId, target: id, authType: 'IAM', invocationType: 'Async' });
-            }
-          }
-        }
       } catch (err) {
         errors.push(`Edge detection error in ${resourceType}: ${err.message}`);
       }
     }
   }
 
-  // Deduplicate edges with identical source+target
-  const seen = new Set();
-  const deduped = edges.filter(e => {
-    const key = `${e.source}→${e.target}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  try {
+    edges.push(...extractIamEdges(resources, nodesByResourceKey, roleToLambda, nodes));
+  } catch (err) {
+    errors.push(`Edge detection error in aws_iam_role_policy: ${err.message}`);
+  }
 
-  return { nodes, edges: deduped, errors };
+  edges = deduplicateEdges(edges);
+
+  // Pass 4: apply layout positions
+  const positions = assignLayout(nodes, edges);
+  for (const node of nodes) {
+    const pos = positions[node.id] || { x: LAYOUT.startX, y: LAYOUT.startY };
+    node.x = pos.x;
+    node.y = pos.y;
+  }
+
+  return { nodes, edges, errors };
 }

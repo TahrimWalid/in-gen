@@ -54,8 +54,8 @@ const FEATURES = [
     body: 'Paste your existing .tf files to visualise and validate your current infrastructure instantly.',
   },
   {
-    title: 'AI Architect Chat',
-    body: 'Ask your architecture anything. Powered by a self-hosted Qwen3.6-27B model for privacy-conscious teams.',
+    title: 'Bring Your Own Model',
+    body: 'InGen works with any OpenAI-compatible endpoint. Self-host LLMs (tested on Qwen3.6-27B) for zero API costs and full data sovereignty, or connect Claude, Gemini, or GPT-4o with your own API key.',
   },
 ];
 
@@ -243,6 +243,9 @@ export default function LandingPage() {
         >
           Open InGen →
         </Link>
+        <p className="mt-6 text-xs text-slate-500 max-w-md mx-auto">
+          Works with Claude, Gemini, GPT-4o, and self-hosted models via any OpenAI-compatible endpoint. Optimized for Qwen3.6-27B.
+        </p>
       </Section>
 
       {/* Footer */}
@@ -253,7 +256,7 @@ export default function LandingPage() {
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 transition-colors">
               GitHub
             </a>
-            <span>Built with Next.js + Qwen3.6</span>
+            <span>Built with Next.js</span>
           </div>
         </div>
       </footer>

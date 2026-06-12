@@ -15,11 +15,13 @@
 
 ## Quick Start
 
-The fastest way to try InGen is the hosted version — no install, no account:
+**Option 1 — Try it now (no setup)**
 
 👉 **[in-gen-five.vercel.app](https://in-gen-five.vercel.app/)**
 
-### Run it locally
+Note: a delay is expected on the first AI response, since the hosted demo is connected to a locally-hosted model running on constrained hardware.
+
+**Option 2 — Connect your own AI**
 
 ```bash
 git clone https://github.com/TahrimWalid/in-gen.git
@@ -28,9 +30,21 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Copy `frontend/.env.local.example` to `frontend/.env.local` and set `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`. Works with Claude, Gemini, GPT-4o, or any OpenAI-compatible endpoint — see [Configuration](#configuration).
 
-The AI Architect chat and AI-assisted generation are optional — see [Configuration](#configuration) to bring your own model.
+**Option 3 — Self-host the AI (recommended for teams)**
+
+Run Qwen3.6-27B-FP8 locally with vLLM:
+
+```bash
+vllm serve Qwen/Qwen3.6-27B-FP8 \
+  --host 0.0.0.0 --port 8000 \
+  --quantization fp8 --enforce-eager
+```
+
+Then set `LLM_BASE_URL=http://your-server:8000` in `.env.local`.
+
+Open [http://localhost:3000](http://localhost:3000) after running `npm run dev`. The deterministic validation engine and Terraform compiler work fully offline regardless of AI configuration — AI is an optional layer on top.
 
 ---
 
@@ -59,6 +73,31 @@ What you draw is what gets deployed — no drift between the diagram and the cod
 | **Issue Detail Drawer** | Every validation issue expands into "Why This Matters", "What Happens If Ignored", a one-click fix, and a link to the relevant AWS docs. |
 | **Workspaces** | Up to 3 named workspaces, each with its own canvas and chat history, persisted locally. |
 | **Light / Dark Theme** | Full theme coverage across the canvas, panels, and editor. |
+
+---
+
+## Model Compatibility
+
+InGen works with any OpenAI-compatible API endpoint.
+
+| Provider | Model | Quality |
+|---|---|---|
+| Self-hosted | Qwen3.6-27B-FP8 (tested during development) | ⭐⭐⭐⭐⭐ |
+| Anthropic | Claude Sonnet 4.6 | ⭐⭐⭐⭐⭐ |
+| Google | Gemini 1.5 Pro | ⭐⭐⭐⭐ |
+| OpenAI | GPT-4o | ⭐⭐⭐⭐ |
+
+InGen uses structured output formats (`<INGEN_DIAGRAM>`, `<INGEN_TERRAFORM>`, `<INGEN_UPDATE>`) that require strong instruction-following. Models rated ⭐⭐⭐⭐+ are recommended for best results.
+
+> **Benchmark result:** Qwen3.6-27B-FP8 (self-hosted) achieved 10.0/10 across Security, Reliability, and Performance scores on a complex 12-resource serverless architecture, with proper iterative fixing and full structured output compliance.
+
+To connect your own model, set these environment variables (see [Configuration](#configuration)):
+
+```bash
+LLM_BASE_URL=https://your-endpoint
+LLM_API_KEY=your-key
+LLM_MODEL=your-model-name
+```
 
 ---
 

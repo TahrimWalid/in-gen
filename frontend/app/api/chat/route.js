@@ -144,6 +144,8 @@ provider "aws" {
 # Resources here
 </INGEN_TERRAFORM>
 
+CRITICAL — EXTENSION MODE: If the user is asking to fix, add, or update something on an existing diagram (keywords: "fix", "add", "update", "include"), do NOT regenerate the full existing architecture in INGEN_TERRAFORM. If the fix is a node property change (e.g. wafEnabled, encryption, throttling), use MODE 3 instead. Only emit INGEN_TERRAFORM when generating a brand new architecture from scratch.
+
 Rules for Terraform generation:
 - Only use these resource types:
   aws_lambda_function, aws_api_gateway_rest_api, aws_api_gateway_v2_api,
@@ -160,7 +162,7 @@ Rules for Terraform generation:
   * DynamoDB: point_in_time_recovery block with enabled = true
   * SQS: visibility_timeout_seconds = 180 minimum
   * Lambda: timeout = 30 minimum (never use AWS default 3)
-- Resource names must be valid Terraform identifiers (lowercase, underscores only)
+- Resource names must be valid Terraform identifiers (lowercase, underscores only — e.g. social_media_api, post_fanout_queue, never socialmediaapi or postFanoutQueue)
 - Use descriptive names matching the service purpose ("order_processor" not "lambda1")
 - Do NOT include variables.tf, outputs.tf, or modules — single main.tf equivalent
 - Each resource block must have attributes on separate lines (not all on one line)
@@ -212,6 +214,7 @@ Use MODE 3 for these validation fixes:
 - Lambda default timeout → { "timeout": 30 }
 - DynamoDB no PITR → { "pointInTimeRecovery": true }
 - API Gateway no throttling → { "throttlingEnabled": true }
+- API Gateway WAF disabled → { "wafEnabled": true }
 - Lambda no DLQ on async path → { "hasDeadLetterQueue": true }
 - Cognito MFA disabled → { "mfaMode": "OPTIONAL" }
 - Cognito Advanced Security disabled → { "advancedSecurity": true }
@@ -226,10 +229,47 @@ CRITICAL RULES for MODE 3:
 - NEVER add new nodes to fix a property-based error
 - NEVER use MODE 3 for structural issues (missing services, missing connections) — use MODE 2
 - Multiple nodes can be updated in one response: put all objects in the "updates" array
-- For SQS visibility timeout: find the connected Lambda timeout from graph state, multiply by 6, use that value`;
+- For SQS visibility timeout: find the connected Lambda timeout from graph state, multiply by 6, use that value
+
+MODE 4 — STRUCTURAL REFACTOR
+Activate MODE 4 when the user wants to restructure the existing diagram — inserting intermediary nodes, removing direct connections, decoupling synchronous chains, converting to event-driven patterns, etc.
+
+Examples that trigger MODE 4:
+"refactor this to be event-driven"
+"insert an SQS queue between ProcessOrder and ProcessPayment"
+"remove the direct Lambda-to-Lambda connections"
+"decouple these services"
+"convert this synchronous chain to async"
+
+When in MODE 4, your ENTIRE response must be ONLY this JSON block:
+
+<INGEN_REFACTOR>
+{
+  "keep": ["exact-existing-uuid-1", "exact-existing-uuid-2"],
+  "add": [
+    { "id": "new_sqs_1", "type": "sqs", "label": "Payment Queue", "x": 400, "y": 300, "data": { "visibilityTimeout": 180 } }
+  ],
+  "removeEdges": [
+    { "source": "exact-existing-uuid-1", "target": "exact-existing-uuid-2" }
+  ],
+  "addEdges": [
+    { "id": "new_edge_1", "source": "exact-existing-uuid-1", "target": "new_sqs_1", "authType": "IAM", "invocationType": "Async" },
+    { "id": "new_edge_2", "source": "new_sqs_1", "target": "exact-existing-uuid-2", "authType": "IAM", "invocationType": "Async" }
+  ]
+}
+</INGEN_REFACTOR>
+
+CRITICAL RULES for MODE 4:
+- "keep" MUST list every existing node ID that should remain on canvas — nodes NOT listed here will be deleted
+- Use the EXACT node IDs from the "CANVAS STATE FOR REFACTORING" section injected below — never invent IDs for existing nodes
+- New node IDs in "add" are temporary placeholders — use them consistently in "addEdges" source/target fields
+- "removeEdges" uses source_id and target_id from the canvas state, not labels
+- If inserting a node between A and B: add the new node, remove edge A→B, add edges A→new and new→B
+- Valid node types: lambda, apiGateway, dynamodb, s3, eventBridge, sqs, sns, cognito`;
 
 const GENERATION_KEYWORDS = ['build', 'create', 'design', 'generate', 'make', 'architect', 'set up', 'deploy', 'implement'];
 const EXTENSION_KEYWORDS = ['add', 'extend', 'fix', 'update', 'include', 'integrate', 'enhance', 'improve', 'modify', 'now add', 'also add'];
+const REFACTOR_KEYWORDS = ['refactor', 'restructure', 'insert between', 'insert a', 'convert to event', 'convert to async', 'make it event', 'make async', 'make event-driven', 'decouple', 'remove the direct', 'replace the direct', 'add a queue between', 'add an sqs between', 'add a sns between', 'add an sns between'];
 
 function hasGenerationIntent(message) {
   const lower = message.toLowerCase();
@@ -239,6 +279,11 @@ function hasGenerationIntent(message) {
 function hasExtensionIntent(message) {
   const lower = message.toLowerCase();
   return EXTENSION_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function hasRefactorIntent(message) {
+  const lower = message.toLowerCase();
+  return REFACTOR_KEYWORDS.some(kw => lower.includes(kw));
 }
 
 function summarizeDiagram({ nodes = [], edges = [] } = {}) {
@@ -328,6 +373,31 @@ function parseUpdateBlock(content) {
   }
 }
 
+function parseRefactorBlock(content) {
+  const match = content.match(/<INGEN_REFACTOR>([\s\S]*?)<\/INGEN_REFACTOR>/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (!Array.isArray(parsed.keep)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function buildRefactorContext({ nodes = [], edges = [] } = {}) {
+  if (!nodes.length) return '';
+  const labelById = {};
+  nodes.forEach(n => { labelById[n.id] = n.data?.label || n.id; });
+  const nodeLines = nodes.map(n =>
+    `  - "${n.data?.label || n.id}" | type: ${n.data?.service} | id: "${n.id}"`
+  ).join('\n');
+  const edgeLines = edges.map(e =>
+    `  - "${labelById[e.source] || e.source}" → "${labelById[e.target] || e.target}" | source_id: "${e.source}" | target_id: "${e.target}"`
+  ).join('\n');
+  return `\nCANVAS STATE FOR REFACTORING — use these exact IDs in your INGEN_REFACTOR response:\nNodes:\n${nodeLines}\nEdges:\n${edgeLines || '  (none)'}`;
+}
+
 export async function POST(req) {
   const { messages, graphState, thinkingMode = false } = await req.json();
 
@@ -355,25 +425,26 @@ export async function POST(req) {
   const last = capped[capped.length - 1];
 
   const lastContent = last.content || '';
-  const isGenerating = hasGenerationIntent(lastContent);
-  const isExtending = hasExtensionIntent(lastContent);
-  const useFullReasoning = thinkingMode || isGenerating || isExtending;
+  const isRefactoring = hasRefactorIntent(lastContent) && (graphState?.nodes?.length > 0);
+  const isGenerating = !isRefactoring && hasGenerationIntent(lastContent);
+  const isExtending = !isRefactoring && hasExtensionIntent(lastContent);
+  const useFullReasoning = thinkingMode || isGenerating || isExtending || isRefactoring;
   let systemPrompt = useFullReasoning
     ? BASE_SYSTEM_PROMPT
     : `/no_think\nNEVER use thinking mode. Respond immediately.\n${BASE_SYSTEM_PROMPT}`;
 
   const existingNodes = graphState?.nodes;
-  if ((isGenerating || isExtending) && existingNodes?.length > 0) {
+  if (isRefactoring && existingNodes?.length > 0) {
+    systemPrompt += `\n\n[REFACTOR MODE — CRITICAL]\nThe user wants to restructure the existing diagram in-place. You MUST use MODE 4 (INGEN_REFACTOR). Do NOT use INGEN_TERRAFORM or INGEN_DIAGRAM.\n${buildRefactorContext(graphState)}`;
+  } else if ((isGenerating || isExtending) && existingNodes?.length > 0) {
     const existingList = existingNodes
       .map(n => `- "${n.data?.label}" (type: ${n.data?.service}, id: "${n.id}")`)
       .join('\n');
 
     if (isExtending && !isGenerating) {
-      // Pure extension request: user wants to ADD to the existing canvas, not rebuild it
       const exampleExistingId = existingNodes[0]?.id ?? 'existing-node-id';
       systemPrompt += `\n\n[EXTENSION MODE — CRITICAL]\nThe user wants to ADD TO or MODIFY the existing diagram. DO NOT regenerate existing nodes.\n\nYour INGEN_DIAGRAM response must contain ONLY:\n1. NEW nodes that do not already exist on canvas\n2. Edges between new nodes\n3. Edges connecting new nodes to EXISTING nodes — use their EXACT id values\n\nExisting canvas nodes (use these ids in edge source/target):\n${existingList}\n\nExample format — to add a Cognito node connecting to an existing API Gateway:\n<INGEN_DIAGRAM>\n{\n  "description": "Added Cognito authentication to existing API Gateway",\n  "nodes": [{"id": "node_new", "type": "cognito", "label": "User Pool", "x": 200, "y": 450, "data": {}}],\n  "edges": [{"id": "e_new", "source": "node_new", "target": "${exampleExistingId}", "authType": "COGNITO", "invocationType": "Synchronous"}]\n}\n</INGEN_DIAGRAM>`;
     } else {
-      // Generation request with existing canvas: inject context for integration
       systemPrompt += `\n\n[EXISTING CANVAS NODES]\nThe diagram already contains these nodes. If generating complementary architecture, create edges to relevant existing nodes using their exact id values:\n${existingList}`;
     }
   }
@@ -408,7 +479,8 @@ export async function POST(req) {
   req.signal?.addEventListener('abort', onClientAbort, { once: true });
 
   try {
-    const res = await fetchNoTimeout(`${baseUrl}/v1/chat/completions`, {
+    const versionedPath = /\/v\d/.test(new URL(baseUrl).pathname);
+    const res = await fetchNoTimeout(`${baseUrl}${versionedPath ? '' : '/v1'}/chat/completions`, {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -434,6 +506,11 @@ export async function POST(req) {
     let content = data.choices[0].message.content;
     const thinkEnd = content.indexOf('</think>');
     if (thinkEnd !== -1) content = content.slice(thinkEnd + 8).trimStart();
+
+    const refactor = parseRefactorBlock(content);
+    if (refactor) {
+      return Response.json({ type: 'structural_refactor', ...refactor });
+    }
 
     const update = parseUpdateBlock(content);
     if (update) {

@@ -235,6 +235,87 @@ export const useStore = create((set, get) => ({
     persistWorkspaces(updated);
   },
 
+  duplicateWorkspace: (id) => {
+    const { workspaces, activeWorkspaceId, nodes, edges, sourceHcl } = get();
+    if (workspaces.length >= 3) return false;
+
+    const now = new Date().toISOString();
+    const flushed = workspaces.map(w =>
+      w.id === activeWorkspaceId ? { ...w, nodes, edges, sourceHcl, updatedAt: now } : w
+    );
+    const source = flushed.find(w => w.id === id);
+    if (!source) return false;
+
+    const copy = {
+      ...source,
+      id: `ws_${crypto.randomUUID()}`,
+      name: `${source.name} (copy)`.slice(0, 50),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = [...flushed, copy];
+
+    clearTimeout(autoSaveTimer);
+    set({
+      workspaces: updated,
+      activeWorkspaceId: copy.id,
+      nodes: sanitizeNodePositions(copy.nodes || []),
+      edges: copy.edges || [],
+      sourceHcl: copy.sourceHcl || null,
+      selectedElement: null,
+      pendingFitView: true,
+      saveStatus: 'idle',
+      past: [],
+      future: [],
+    });
+    persistWorkspaces(updated);
+    persistActiveId(copy.id);
+    get().runValidation();
+    window.dispatchEvent(new CustomEvent('workspace-switched', { detail: { messages: copy.messages || [] } }));
+    return true;
+  },
+
+  importWorkspace: (wsData) => {
+    const { workspaces, activeWorkspaceId, nodes, edges, sourceHcl } = get();
+    if (workspaces.length >= 3) return false;
+
+    const now = new Date().toISOString();
+    const flushed = workspaces.map(w =>
+      w.id === activeWorkspaceId ? { ...w, nodes, edges, sourceHcl, updatedAt: now } : w
+    );
+
+    const imported = {
+      id: `ws_${crypto.randomUUID()}`,
+      name: (wsData.name || 'Imported Architecture').slice(0, 50),
+      createdAt: now,
+      updatedAt: now,
+      nodes: sanitizeNodePositions(wsData.nodes || []),
+      edges: wsData.edges || [],
+      messages: wsData.messages || [],
+      sourceHcl: wsData.sourceHcl || null,
+    };
+    const updated = [...flushed, imported];
+
+    clearTimeout(autoSaveTimer);
+    set({
+      workspaces: updated,
+      activeWorkspaceId: imported.id,
+      nodes: imported.nodes,
+      edges: imported.edges,
+      sourceHcl: imported.sourceHcl,
+      selectedElement: null,
+      pendingFitView: true,
+      saveStatus: 'idle',
+      past: [],
+      future: [],
+    });
+    persistWorkspaces(updated);
+    persistActiveId(imported.id);
+    get().runValidation();
+    window.dispatchEvent(new CustomEvent('workspace-switched', { detail: { messages: imported.messages } }));
+    return true;
+  },
+
   updateWorkspaceMessages: (messages) => {
     const { workspaces, activeWorkspaceId } = get();
     const updated = workspaces.map(w =>
@@ -382,6 +463,70 @@ export const useStore = create((set, get) => ({
     });
 
     set({ nodes, edges, sourceHcl: hcl, selectedElement: null, pendingFitView: true });
+    get().runValidation();
+    get().scheduleAutoSave();
+  },
+
+  applyStructuralRefactor: ({ keep, add, removeEdges, addEdges }) => {
+    get().takeSnapshot();
+    const { nodes: currentNodes, edges: currentEdges } = get();
+
+    const keepSet = new Set(keep || []);
+    const keptNodes = keepSet.size > 0
+      ? currentNodes.filter(n => keepSet.has(n.id))
+      : currentNodes;
+
+    const newIdMap = {};
+    const addedNodes = (add || []).map((n, index) => {
+      const serviceType = normalizeServiceType(n.type);
+      const id = crypto.randomUUID();
+      newIdMap[n.id] = id;
+      return {
+        id,
+        type: 'awsNode',
+        position: {
+          x: (typeof n.x === 'number' && !isNaN(n.x)) ? n.x : 400 + (index * 250),
+          y: (typeof n.y === 'number' && !isNaN(n.y)) ? n.y : 300 + (index * 150),
+        },
+        data: {
+          ...getServiceDefaults(serviceType),
+          ...(n.data || {}),
+          ...(SAFETY_OVERRIDES[serviceType] || {}),
+          label: n.label || serviceType,
+          service: serviceType,
+        },
+      };
+    });
+
+    const removeSet = new Set((removeEdges || []).map(e => `${e.source}|${e.target}`));
+    const keptEdges = currentEdges.filter(e => {
+      if (keepSet.size > 0 && (!keepSet.has(e.source) || !keepSet.has(e.target))) return false;
+      return !removeSet.has(`${e.source}|${e.target}`);
+    });
+
+    const allNodes = [...keptNodes, ...addedNodes];
+    const addedEdges = (addEdges || []).map(e => {
+      const source = newIdMap[e.source] || e.source;
+      const target = newIdMap[e.target] || e.target;
+      const sourceNode = allNodes.find(n => n.id === source);
+      const defaultAuthType = sourceNode?.data?.service === 'apiGateway' ? 'COGNITO' : 'IAM';
+      return {
+        id: crypto.randomUUID(),
+        source,
+        target,
+        type: 'awsEdge',
+        animated: true,
+        data: {
+          authType: e.authType || defaultAuthType,
+          invocationType: e.invocationType === 'Synchronous' ? 'Sync'
+            : e.invocationType === 'Asynchronous' ? 'Async'
+            : (e.invocationType || 'Async'),
+          iamPermissions: [],
+        },
+      };
+    });
+
+    set({ nodes: allNodes, edges: [...keptEdges, ...addedEdges], sourceHcl: null, selectedElement: null });
     get().runValidation();
     get().scheduleAutoSave();
   },

@@ -56,12 +56,25 @@ function arr0(val) {
   return Array.isArray(val) ? val[0] : val;
 }
 
+// Split a name into lowercase tokens regardless of whether it uses snake_case,
+// camelCase, PascalCase, or kebab-case — so prefix detection and label cleanup
+// work correctly for output from any LLM, not just snake_case-compliant ones.
+function tokenize(name) {
+  return name
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_')
+    .split('_')
+    .filter(Boolean);
+}
+
 // Detect a shared naming prefix (e.g. "social_media") across resource identifiers
 // so it can be stripped from generated labels.
 function detectCommonPrefix(resourceNames) {
   if (!resourceNames || resourceNames.length < 2) return '';
 
-  const splitNames = resourceNames.map(n => n.toLowerCase().replace(/-/g, '_').split('_'));
+  const splitNames = resourceNames.map(tokenize);
   const minLength = Math.min(...splitNames.map(p => p.length));
   if (minLength < 2) return '';
 
@@ -81,12 +94,14 @@ function detectCommonPrefix(resourceNames) {
 function cleanLabel(raw, commonPrefix = '') {
   if (!raw) return '';
 
-  let cleaned = String(raw)
-    .replace(/\$\{[^}]*\}/g, '')
-    .replace(/-+$/, '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
+  const tokens = tokenize(
+    String(raw)
+      .replace(/\$\{[^}]*\}/g, '')
+      .replace(/-+$/, '')
+      .trim()
+  );
+
+  let cleaned = tokens.join('_');
 
   if (commonPrefix && cleaned.startsWith(commonPrefix)) {
     const stripped = cleaned.slice(commonPrefix.length).replace(/^_+/, '');

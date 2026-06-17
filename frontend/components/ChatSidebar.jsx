@@ -51,6 +51,7 @@ export default function ChatSidebar({ onClose }) {
   const issues = useStore(state => state.issues || []);
   const streamNodes = useStore(state => state.streamNodes);
   const applyPropertyUpdates = useStore(state => state.applyPropertyUpdates);
+  const applyStructuralRefactor = useStore(state => state.applyStructuralRefactor);
   const setSourceHcl = useStore(state => state.setSourceHcl);
   const updateWorkspaceMessages = useStore(state => state.updateWorkspaceMessages);
   const getCurrentWorkspace = useStore(state => state.getCurrentWorkspace);
@@ -208,6 +209,23 @@ export default function ChatSidebar({ onClose }) {
         }
       } else if (data.type === 'diagram_generation') {
         setPendingGeneration(data);
+      } else if (data.type === 'structural_refactor') {
+        applyStructuralRefactor({ keep: data.keep, add: data.add, removeEdges: data.removeEdges, addEdges: data.addEdges });
+        const added = (data.add || []).map(n => n.label).filter(Boolean);
+        const removed = (data.removeEdges || []).length;
+        const summary = [
+          added.length ? `added ${added.join(', ')}` : null,
+          removed ? `removed ${removed} edge${removed !== 1 ? 's' : ''}` : null,
+        ].filter(Boolean).join(', ');
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Refactored: ${summary || 'diagram updated'}. Validation is running.`,
+            timestamp: new Date(),
+            isGenerated: true,
+          },
+        ]);
       } else if (data.type === 'property_update') {
         applyPropertyUpdates(data.updates);
         const updatedLabels = data.updates.map(u => {
@@ -254,7 +272,7 @@ export default function ChatSidebar({ onClose }) {
       setLoadingText(null);
       setIsLoading(false);
     }
-  }, [messages, nodes, edges, issues, isLoading, isStreaming, thinkingMode, applyPropertyUpdates]);
+  }, [messages, nodes, edges, issues, isLoading, isStreaming, thinkingMode, applyPropertyUpdates, applyStructuralRefactor]);
 
   // Listen for AI-assisted structural fixes triggered from the issues panel
   useEffect(() => {

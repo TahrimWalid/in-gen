@@ -65,13 +65,15 @@ What you draw is what gets deployed — no drift between the diagram and the cod
 | | |
 |---|---|
 | **AI Architecture Generation** | Describe your app in plain English. InGen generates a complete AWS serverless architecture using Terraform. |
+| **AI Structural Refactor** | Ask the AI to restructure your existing diagram — insert queues between services, convert synchronous chains to async, decouple Lambda-to-Lambda calls — without touching nodes you want to keep. |
 | **32 Validation Rules** | Real-time checks for security, reliability, and performance — SQS timeout mismatches, exposed S3 buckets, missing WAF, EOL Lambda runtimes, and more. |
 | **Architecture Scoring** | Security, Reliability, and Performance scores update live as you design, so you know your architecture quality before you deploy. |
+| **Auto-Remediation** | Click "Fix automatically" on any issue card to apply the correct property value in one click, or "Fix with AI" for structural fixes that require adding or removing components. |
 | **Bidirectional HCL Editor** | Edit Terraform directly and watch the diagram update. Edit the diagram and watch the HCL update. Always in sync. |
 | **Import Existing Terraform** | Paste or upload your existing `.tf` files to visualise and validate your current infrastructure instantly. |
 | **AI Architect Chat** | Ask your architecture anything — "Does this scale?", "Is this HIPAA-compliant?", "What's missing?" |
 | **Issue Detail Drawer** | Every validation issue expands into "Why This Matters", "What Happens If Ignored", a one-click fix, and a link to the relevant AWS docs. |
-| **Workspaces** | Up to 3 named workspaces, each with its own canvas and chat history, persisted locally. |
+| **Workspaces** | Up to 3 named workspaces, each with its own canvas and chat history, persisted locally. Duplicate or export any workspace as a `.ingen` file for lossless sharing — includes canvas positions, all node properties, and chat history. |
 | **Light / Dark Theme** | Full theme coverage across the canvas, panels, and editor. |
 
 ---
@@ -84,10 +86,10 @@ InGen works with any OpenAI-compatible API endpoint.
 |---|---|---|
 | Self-hosted | Qwen3.6-27B-FP8 (tested during development) | ⭐⭐⭐⭐⭐ |
 | Anthropic | Claude Sonnet 4.6 | ⭐⭐⭐⭐⭐ |
-| Google | Gemini 1.5 Pro | ⭐⭐⭐⭐ |
+| Google | Gemini 2.5 Pro / Flash | ⭐⭐⭐⭐ |
 | OpenAI | GPT-4o | ⭐⭐⭐⭐ |
 
-InGen uses structured output formats (`<INGEN_DIAGRAM>`, `<INGEN_TERRAFORM>`, `<INGEN_UPDATE>`) that require strong instruction-following. Models rated ⭐⭐⭐⭐+ are recommended for best results.
+InGen uses structured output formats (`<INGEN_DIAGRAM>`, `<INGEN_TERRAFORM>`, `<INGEN_UPDATE>`, `<INGEN_REFACTOR>`) that require strong instruction-following. Models rated ⭐⭐⭐⭐+ are recommended for best results.
 
 > **Benchmark result:** Qwen3.6-27B-FP8 (self-hosted) achieved 10.0/10 across Security, Reliability, and Performance scores on a complex 12-resource serverless architecture, with proper iterative fixing and full structured output compliance.
 

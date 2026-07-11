@@ -27,7 +27,13 @@ function fetchNoTimeout(url, { method = 'POST', headers = {}, body, signal } = {
           resolve({
             ok: res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode,
-            json: () => Promise.resolve(JSON.parse(text)),
+            json: () => {
+              try {
+                return Promise.resolve(JSON.parse(text));
+              } catch {
+                return Promise.reject(new Error(`Non-JSON response (${res.statusCode}): ${text.slice(0, 300)}`));
+              }
+            },
           });
         });
         res.on('error', reject);

@@ -479,8 +479,9 @@ export async function POST(req) {
   req.signal?.addEventListener('abort', onClientAbort, { once: true });
 
   try {
-    const versionedPath = /\/v\d/.test(new URL(baseUrl).pathname);
-    const res = await fetchNoTimeout(`${baseUrl}${versionedPath ? '' : '/v1'}/chat/completions`, {
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const versionedPath = /\/v\d/.test(new URL(cleanBase).pathname);
+    const res = await fetchNoTimeout(`${cleanBase}${versionedPath ? '' : '/v1'}/chat/completions`, {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',

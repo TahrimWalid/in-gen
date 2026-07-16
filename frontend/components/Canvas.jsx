@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import ReactFlow, { MiniMap, Controls, Background, BackgroundVariant, ControlButton, getNodesBounds, getViewportForBounds } from 'reactflow';
 import { toPng } from 'html-to-image';
 import { useStore } from '../app/store';
@@ -19,6 +19,9 @@ import { useTheme } from '../app/useTheme';
 import 'reactflow/dist/style.css';
 
 const getId = () => crypto.randomUUID();
+
+const NODE_TYPES = { awsNode: AwsNode };
+const EDGE_TYPES = { awsEdge: AwsEdge };
 
 async function encodeState(nodes, edges) {
   const bytes = new TextEncoder().encode(JSON.stringify({ nodes, edges }));
@@ -64,8 +67,6 @@ export default function Canvas({ onToggleChat, isChatOpen, onToggleEditor, isEdi
     streamNodes, setSourceHcl,
   } = useStore();
 
-  const nodeTypes = useMemo(() => ({ awsNode: AwsNode }), []);
-  const edgeTypes = useMemo(() => ({ awsEdge: AwsEdge }), []);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -334,8 +335,8 @@ export default function Canvas({ onToggleChat, isChatOpen, onToggleEditor, isEdi
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
